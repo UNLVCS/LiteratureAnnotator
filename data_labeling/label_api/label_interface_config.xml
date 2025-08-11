@@ -1,0 +1,55 @@
+<!--
+  Label Studio Labeling Configuration
+  Based on the provided sketch.
+  This configuration is designed for evaluating a retrieved document (paper)
+  against a user query.
+-->
+<View>
+
+  <!-- Main Header: Displays the ID and Title of the paper being annotated. -->
+  <!-- The variables $paper_id and $title should be present in your data. -->
+  <Header value="Paper ID: $paper_id - $title" />
+  <View style="height: 1px; background: #ccc; margin: 10px 0;" />
+
+  <!-- Main container with a two-column layout -->
+  <View style="display: flex; gap: 0.5em;">
+
+    <!-- Left Column: Contains the query, paper content, and the annotator's response area. -->
+    <View style="flex: 1; display: flex; flex-direction: column; gap: 1em;">
+
+      <!-- Section for the original user query -->
+      <View>
+        <Header value="Classification Criteria" />
+        <Text name="class_criteria" value="$class_criteria" />
+      </View>
+
+      <!-- Section for the retrieved paper's content -->
+      <View>
+        <Header value="Retrieved Paper Content (For Specific Criteria)" />
+        <!-- The 'paper_content' is the object being labeled. -->
+        <Text name="paper_content" value="$paper_text" />
+      </View>
+
+    </View>
+
+    <!-- Right Column: Contains the evaluation criteria and the final answer/summary box. -->
+    <View style="flex: 1; display: flex; flex-direction: column; gap: 1.5em; border-left: 1px solid #ccc; padding-left: 2em;">
+
+       <!-- Section for the annotator's final answer or summary -->
+      <View>
+        <Header value="Final Answer / Summary" />
+        <!--
+          The 'TextArea' tag allows for free-form text input.
+          This is for the final "Answer" as depicted in the "Store" section of the sketch.
+        -->
+        <TextArea name="annotator_answer" toName="paper_content"
+                  placeholder="Write your final answer or summary here..."
+                  rows="8"
+                  maxSubmissions="1" />
+      </View>
+
+    </View>
+
+  </View>
+
+</View>
