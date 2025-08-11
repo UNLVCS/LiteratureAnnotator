@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request, BackgroundTasks
 from pydantic import BaseModel
-from label_api import Labeller
-from langchain_openai import ChatOpenAI
+from label_api.lstudio_interfacer import Labeller
+from langchain_openai import ChatOpenAI 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import RetrievalQA
 from langchain import hub
@@ -67,6 +67,8 @@ class CriteriaRequest(BaseModel):
 @app.post("/webhook")
 async def ls_webhook(req: Request, bg: BackgroundTasks):
     payload = await req.json()
+
+    print(json.dumps(payload, indent=2))
 
     if payload.get("event") != "annotation_completed":
         return {"status": "ignored", "event": payload.get("event")}

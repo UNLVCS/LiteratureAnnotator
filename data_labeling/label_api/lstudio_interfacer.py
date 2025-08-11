@@ -1,14 +1,16 @@
 from label_studio_sdk import Client
 import os
 from dotenv import load_dotenv
+import requests
 
 class Labeller:
     def __init__(self):
         load_dotenv()
         self.ls = Client(url=os.getenv('LABEL_STUDIO_URL'), api_key=os.getenv('LABEL_STUDIO_API_KEY'))
 
+
         # Load XML label config
-        with open('label_interface_config.xml', 'r') as f:
+        with open('label_api/label_interface_config.xml', 'r') as f:
             interface_config = f.read()
 
         # Create a new project with your custom labeling interface
@@ -18,8 +20,11 @@ class Labeller:
             label_config=interface_config
         )
 
-        # print(f'Project created: {self.project.title} (ID: {self.project.id})')
-
+        # Headers for creating Webhooks later
+        self.headers = {
+            "Authorization": f"Token {os.getenv('LABEL_STUDIO_API_KEY')}"
+        }
+        
 
     def create_task(self, article):
         tasks = []
@@ -49,3 +54,11 @@ class Labeller:
         )
 
         return completed_tasks
+    
+
+    def create_webhook(self, endpoint):
+        header = {
+            "url": endpoint,
+            "Authorization": f"Token {os.getenv('LABEL_STUDIO_API_KEY')}",
+            "Content-Type": "application/json"
+        }
