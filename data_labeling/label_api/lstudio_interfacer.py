@@ -62,3 +62,17 @@ class Labeller:
             "Authorization": f"Token {os.getenv('LABEL_STUDIO_API_KEY')}",
             "Content-Type": "application/json"
         }
+
+
+        response = requests.post(
+            f"{self.ls.url}/api/webhooks/",
+            headers=self.headers,
+            json={
+                "url": endpoint,
+                "events": ["PROJECT_CREATED", "ANNOTATION_CREATED", "ANNOTATION_DELETED", "ANNOTATION_COMPLETED"],
+                "project": self.project.id,
+                "enabled": True
+                # "actions": ['ANNOTATIONS_DELETED']
+            }
+        )
+        print(f"Webhook created: {response.status_code} - {response.json()}")

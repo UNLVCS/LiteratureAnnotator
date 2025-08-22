@@ -51,6 +51,9 @@ prompts = [
 LS = Labeller()
 app = FastAPI()
 
+LS.create_webhook(
+    endpoint="http://localhost:8000"
+) 
 
 # --------------------
 # Schemas
@@ -61,24 +64,37 @@ class CriteriaRequest(BaseModel):
 
 
 # --------------------
-# Webhooks
+# Webhooks 
 # --------------------
 
 @app.post("/webhook")
 async def ls_webhook(req: Request, bg: BackgroundTasks):
     payload = await req.json()
 
+    print("WEBHOOK RECEIVED  ")
+    # print(payload.get("event", "no_event"))
     print(json.dumps(payload, indent=2))
+    action = payload.get("action")
 
-    if payload.get("event") != "annotation_completed":
-        return {"status": "ignored", "event": payload.get("event")}
+    if  action == "PROJECT_CREATED":
+        # If a new project is created, we can start importing tasks
+        proj_id = payload["project"]["id"]
+        bg.add_task(import_next_paper_tasks, proj_id)
+        return {"status": "ok", "event": "project_created"}
 
-    proj_id = payload["data"]["project"]["id"]
-    task_info = payload["data"]["task"]
-    annotation = payload["data"]["annotation"]
+        # return {"status": "ignored", "event": payload.get("event")}
+
+    proj_id = payload["project"]["id"]
+
+    # if  action == "TASK_CREATED":
+    if  action == "ANNOTATION_COMPLETED":
+        task_info = payload["tasks"]
+        annotation = payload["annotation"]
+        bg.add_task(handle_completed_task, task_info, annotation)
+        return {"status": "ok", "event": "annotation_completed"}
 
     # Handle the completed task in the background
-    bg.add_task(handle_completed_task, task_info, annotation)
+    # bg.add_task(handle_completed_task, task_info, annotation)e
 
     # If there are no new tasks left in the project, pull the next paper from the queue
     new_count = LS.count_new_tasks(proj_id)
@@ -124,6 +140,8 @@ def import_next_paper_tasks(project_id: int) -> None:
     """Pull the next paper from the queue and create Label Studio tasks.
 
     Uses the safer claim/ack pattern when available, with a fallback to simple pop.
+    Creates a paper-specific RAG pipeline to ensure responses only come from the relevant paper.
+    Retrieves ALL chunks for the paper to allow the LLM to reason over the complete content.
     """
     paper_id: Optional[str] = None
     claim_token: Optional[str] = None
@@ -139,9 +157,31 @@ def import_next_paper_tasks(project_id: int) -> None:
 
     try:
         tasks = []
+        # Create a retriever with metadata filter for this specific paper
+        # and increase the number of results to get all chunks
+        filtered_retriever = vector_store.as_retriever(
+            search_kwargs={
+                "filter": {"doc": paper_id},  # Filter to only search within this paper
+                "k": 100  # Increase this if papers have more chunks
+            }
+        )
+        
+        # Create a new QA chain with the filtered retriever
+        paper_qa_chain = RetrievalQA.from_chain_type(
+            llm,
+            retriever=filtered_retriever,
+            return_source_documents=True,
+            chain_type="stuff",  # Explicitly set to use stuff chain
+            chain_type_kwargs={
+                "prompt": prompt
+            }
+        )
+
         for q in prompts:
-            # RetrievalQA expects the key "query" for the user question
-            result = qa_chain.invoke({"query": q})
+            result = paper_qa_chain.invoke({
+                "query": q,
+                "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
+            })
             llm_answer = result.get("result") if isinstance(result, dict) else result
 
             tasks.append(
@@ -149,7 +189,7 @@ def import_next_paper_tasks(project_id: int) -> None:
                     "data": {
                         "paper_id": paper_id,
                         "title": "SOME TITLE | REPLACE LATER",
-                        "paper_text": llm_answer or "",
+                        "paper_text": llm_answer or "NO LLM ANSWER",
                         "class_criteria": q,
                     }
                 }

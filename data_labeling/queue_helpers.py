@@ -23,7 +23,7 @@ def enqueue_paper_id(paper_id: str) -> bool:
         r.rpush(PAPER_QUEUE, paper_id)
     return bool(added)
 
-def pop_paper_id(block: bool = False, timeout: int = 0) -> str | None:
+def pop_paper_id(block: bool = False, timeout: int = 0) -> str or None:
     """Simple pop (use when reliability is less critical)."""
     if block:
         item = r.blpop(PAPER_QUEUE, timeout=timeout)
@@ -36,7 +36,7 @@ def pop_paper_id(block: bool = False, timeout: int = 0) -> str | None:
         r.srem(DEDUP_SET, pid)
     return pid
 
-def claim_next_paper(block_timeout: int = 0) -> str | None:
+def claim_next_paper(block_timeout: int = 0) -> str or None:
     """
     Safer: atomically move from main queue to 'processing' (BRPOPLPUSH).
     After successful processing, call `ack_paper(paper_id)` to remove it.
