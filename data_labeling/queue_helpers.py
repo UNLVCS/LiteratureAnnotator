@@ -40,9 +40,21 @@ def claim_next_paper(block_timeout: int = 0) -> str or None:
     """
     Safer: atomically move from main queue to 'processing' (BRPOPLPUSH).
     After successful processing, call `ack_paper(paper_id)` to remove it.
+    Returns None if no papers available or timeout occurs.
     """
-    pid = r.brpoplpush(PAPER_QUEUE, PROCESSING_Q, timeout=block_timeout)
-    return pid  # None on timeout
+    try:
+        # First check if queue is empty to avoid unnecessary blocking
+        if block_timeout == 0 and r.llen(PAPER_QUEUE) == 0:
+            return None
+            
+        pid = r.brpoplpush(PAPER_QUEUE, PROCESSING_Q, timeout=block_timeout)
+        return pid  # None on timeout
+    except redis.exceptions.ConnectionError as e:
+        print(f"Redis connection error while claiming paper: {e}")
+        raise
+    except redis.exceptions.RedisError as e:
+        print(f"Redis error while claiming paper: {e}")
+        raise
 
 def ack_paper(paper_id: str) -> None:
     """Remove from processing + dedupe set after success."""

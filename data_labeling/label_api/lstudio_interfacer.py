@@ -38,13 +38,21 @@ class Labeller:
                 }
             }
             tasks.append(task)
+        return tasks  # Return the created tasks
 
     def import_task(self, tasks):
-        self.project.import_tasks(tasks)
+        print("IMPORTED TASKS RESPONSE")
+        print(self.project.import_tasks(tasks))
     
     def count_new_tasks(self, project_id):
-        response = self.ls.get(f"/api/projects/{project_id}/tasks?status=new&limit=0")
-        return response["meta"]["total"]
+        # Use requests directly since the SDK Client doesn't have a generic get method
+        response = requests.get(
+            f"{self.ls.url}/api/projects/{project_id}/tasks?status=new&limit=0",
+            # f"{self.ls.url}/api/projects/{project_id}/tasks?status=new&limit=0",
+            headers=self.headers
+        )
+        response.raise_for_status()
+        return response.json()["meta"]["total"]
     
     def get_tasks(self):
         
@@ -57,22 +65,40 @@ class Labeller:
     
 
     def create_webhook(self, endpoint):
-        header = {
-            "url": endpoint,
-            "Authorization": f"Token {os.getenv('LABEL_STUDIO_API_KEY')}",
+        """Create a webhook for the project with proper error handling and validation."""
+        # Validate endpoint URL
+        if not endpoint.startswith(('http://', 'https://')):
+            raise ValueError("Endpoint URL must start with http:// or https://")
+        
+        if not endpoint.endswith('/webhook'):
+            raise ValueError("Endpoint URL must end with /webhook for FastAPI handler")
+
+        # Add Content-Type to headers if not present
+        webhook_headers = self.headers.copy()
+        webhook_headers.update({
             "Content-Type": "application/json"
-        }
+        })
 
-
-        response = requests.post(
-            f"{self.ls.url}/api/webhooks/",
-            headers=self.headers,
-            json={
-                "url": endpoint,
-                "events": ["PROJECT_CREATED", "ANNOTATION_CREATED", "ANNOTATION_DELETED", "ANNOTATION_COMPLETED"],
-                "project": self.project.id,
-                "enabled": True
-                # "actions": ['ANNOTATIONS_DELETED']
-            }
-        )
+        try:
+            response = requests.post(
+                f"{self.ls.url}/api/webhooks/",
+                headers=webhook_headers,
+                json={
+                    "url": endpoint,
+                    "events": ["PROJECT_CREATED", "ANNOTATION_CREATED", "ANNOTATION_DELETED", "ANNOTATION_COMPLETED"],
+                    "project": self.project.id,
+                    "enabled": True,
+                    "send_payload": True  # Ensure full payload is sent
+                }
+            )
+            response.raise_for_status()  # Raise exception for bad status codes
+            
+            # Verify webhook was created
+            webhook_data = response.json()
+            if not webhook_data.get('id'):
+                raise ValueError("Webhook creation failed - no webhook ID returned")
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to create webhook: {str(e)}")
+            raise
         print(f"Webhook created: {response.status_code} - {response.json()}")

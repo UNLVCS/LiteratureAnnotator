@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Request, BackgroundTasks
 from pydantic import BaseModel
-from label_api.lstudio_interfacer import Labeller
+from label_api.lstudio_interfacer_sdk import LabellerSDK
+# from label_api.lstudio_interfacer import Labeller
 from langchain_openai import ChatOpenAI 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import RetrievalQA
@@ -48,11 +49,11 @@ prompts = [
     "etc...",
 ]
 
-LS = Labeller()
+LS = LabellerSDK()
 app = FastAPI()
 
 LS.create_webhook(
-    endpoint="http://localhost:8000"
+    endpoint="http://localhost:8000/webhook"
 ) 
 
 # --------------------
@@ -70,15 +71,17 @@ class CriteriaRequest(BaseModel):
 @app.post("/webhook")
 async def ls_webhook(req: Request, bg: BackgroundTasks):
     payload = await req.json()
-
-    print("WEBHOOK RECEIVED  ")
-    # print(payload.get("event", "no_event"))
-    print(json.dumps(payload, indent=2))
     action = payload.get("action")
+
+    print("==========================================")
+    print("WEBHOOK RECEIVED: ", action)
+    print("==========================================")
+    # print(payload.get("event", "no_event"))
+
 
     if  action == "PROJECT_CREATED":
         # If a new project is created, we can start importing tasks
-        proj_id = payload["project"]["id"]
+        proj_id = payload["project"]["id"] 
         bg.add_task(import_next_paper_tasks, proj_id)
         return {"status": "ok", "event": "project_created"}
 
@@ -195,7 +198,7 @@ def import_next_paper_tasks(project_id: int) -> None:
                 }
             )
 
-        LS.import_task(tasks)
+        LS.import_tasks(tasks)
 
         # Acknowledge the claimed item only if we used the claim pattern
         if claim_token:
