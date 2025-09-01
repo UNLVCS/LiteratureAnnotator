@@ -56,7 +56,12 @@ class Chunker():
         to_chunk = []
         to_chnk_txt_size = 0
         for section in self.article:                # If section > 150 words then chunk that section itself
-            section = '\n'.join(section)
+            # Some sections (e.g., Title, References) are plain strings while others are lists of strings.
+            # Joining a string with '\n'.join(section) will insert newlines between EACH CHARACTER,
+            if isinstance(section, list):
+                section = '\n'.join(section)
+            elif not isinstance(section, str):
+                section = str(section)
             if to_chnk_txt_size > 150:
                 to_chunk.append(section)
                 # to_chunk += section
@@ -74,8 +79,17 @@ class Chunker():
 
         for i in range(1, len(text)):
 
-            text_first = "".join(text[i-1])
-            text_later = "".join(text[i])
+            # Normalize possible list inputs to strings; if already string, use as-is
+            prev_item = text[i-1]
+            next_item = text[i]
+            if isinstance(prev_item, list):
+                text_first = "".join(prev_item)
+            else:
+                text_first = str(prev_item)
+            if isinstance(next_item, list):
+                text_later = "".join(next_item)
+            else:
+                text_later = str(next_item)
             
             chunk_first = ""
             chunk_latter = ""

@@ -11,41 +11,114 @@
   <Header value="Paper ID: $paper_id - $title" />
   <View style="height: 1px; background: #ccc; margin: 10px 0;" />
 
-  <!-- Main container with a two-column layout -->
+  <!-- Main container with a three-section layout -->
   <View style="display: flex; gap: 0.5em;">
 
-    <!-- Left Column: Contains the query, paper content, and the annotator's response area. -->
+    <!-- Left Column: Contains the query and LLM-generated answer -->
     <View style="flex: 1; display: flex; flex-direction: column; gap: 1em;">
 
       <!-- Section for the original user query -->
       <View>
         <Header value="Classification Criteria" />
-        <Text name="class_criteria" value="$class_criteria" />
+        <Text name="class_criteria_display" value="$class_criteria" style="background: #f0f8ff; padding: 10px; border-radius: 5px;" />
       </View>
 
-      <!-- Section for the retrieved paper's content -->
+      <!-- Section for the LLM-generated answer -->
       <View>
-        <Header value="Retrieved Paper Content (For Specific Criteria)" />
+        <Header value="LLM Generated Answer" />
         <!-- The 'paper_content' is the object being labeled. -->
-        <Text name="paper_content" value="$paper_text" />
+        <Text name="paper_content" value="$paper_text" style="background: #f5fff5; padding: 10px; border-radius: 5px; border: 1px solid #ddd;" />
+      </View>
+
+      <!-- Quality assessment checkboxes for LLM answer -->
+      <View>
+        <Header value="LLM Answer Quality" />
+        <Choices name="llm_quality" toName="paper_content" choice="multiple">
+          <Choice value="accurate" />
+          <Choice value="complete" />
+          <Choice value="relevant" />
+          <Choice value="well_synthesized" />
+          <Choice value="missing_info" />
+          <Choice value="incorrect_info" />
+        </Choices>
       </View>
 
     </View>
 
-    <!-- Right Column: Contains the evaluation criteria and the final answer/summary box. -->
-    <View style="flex: 1; display: flex; flex-direction: column; gap: 1.5em; border-left: 1px solid #ccc; padding-left: 2em;">
+    <!-- Middle Column: Retrieved chunks for verification -->
+    <View style="flex: 1.2; display: flex; flex-direction: column; gap: 1em; border-left: 1px solid #ccc; padding-left: 1em;">
+
+      <!-- Section showing retrieved chunks count -->
+      <View>
+        <Header value="Retrieved Chunks ($num_chunks chunks)" />
+        <Text name="chunks_description" value="These are the original document chunks retrieved by the vector search:" style="font-style: italic; color: #666;" />
+      </View>
+
+      <!-- Section for the retrieved chunks -->
+      <View style="max-height: 400px; overflow-y: auto; background: #fafafa; padding: 10px; border-radius: 5px; border: 1px solid #ddd;">
+        <Text name="retrieved_chunks_display" value="$retrieved_chunks" style="font-family: monospace; font-size: 12px; white-space: pre-wrap;" />
+      </View>
+
+      <!-- Chunk relevance assessment -->
+      <View>
+        <Header value="Chunk Relevance Assessment" />
+        <TextArea name="chunk_relevance_notes" toName="retrieved_chunks_display"
+                  placeholder="Which chunks are most/least relevant? Any missing information?"
+                  rows="3" />
+      </View>
+
+    </View>
+
+    <!-- Right Column: Final evaluation and annotation -->
+    <View style="flex: 1; display: flex; flex-direction: column; gap: 1em; border-left: 1px solid #ccc; padding-left: 1em;">
+
+      <!-- Overall relevance rating -->
+      <View>
+        <Header value="Overall Relevance Rating" />
+        <Rating name="relevance_rating" toName="paper_content" maxRating="5" icon="star" size="medium" />
+      </View>
+
+      <!-- Retrieval quality assessment -->
+      <View>
+        <Header value="Retrieval Quality" />
+        <Choices name="retrieval_quality" toName="paper_content" choice="single">
+          <Choice value="excellent" />
+          <Choice value="good" />
+          <Choice value="fair" />
+          <Choice value="poor" />
+        </Choices>
+      </View>
+
+      <!-- Issues identification -->
+      <View>
+        <Header value="Issues Identified" />
+        <Choices name="issues" toName="paper_content" choice="multiple">
+          <Choice value="irrelevant_chunks" />
+          <Choice value="missing_key_info" />
+          <Choice value="poor_chunk_quality" />
+          <Choice value="wrong_context" />
+          <Choice value="no_issues" />
+        </Choices>
+      </View>
 
        <!-- Section for the annotator's final answer or summary -->
       <View>
         <Header value="Final Answer / Summary" />
-        <!--
-          The 'TextArea' tag allows for free-form text input.
-          This is for the final "Answer" as depicted in the "Store" section of the sketch.
-        -->
         <TextArea name="annotator_answer" toName="paper_content"
-                  placeholder="Write your final answer or summary here..."
-                  rows="8"
+                  placeholder="Write your final answer, corrections, or improvements here..."
+                  rows="6"
                   maxSubmissions="1" />
+      </View>
+
+      <!-- Confidence level -->
+      <View>
+        <Header value="Annotation Confidence" />
+        <Choices name="confidence" toName="paper_content" choice="single">
+          <Choice value="very_confident" />
+          <Choice value="confident" />
+          <Choice value="somewhat_confident" />
+          <Choice value="not_confident" />
+        </Choices>
       </View>
 
     </View>

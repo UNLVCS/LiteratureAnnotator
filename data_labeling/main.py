@@ -174,9 +174,9 @@ def import_next_paper_tasks(project_id: int) -> None:
             llm,
             retriever=filtered_retriever,
             return_source_documents=True,
-            chain_type="stuff",  # Explicitly set to use stuff chain
+            chain_type="stuff",  # Explicitly set to use stuff chain 
             chain_type_kwargs={
-                "prompt": prompt
+                "prompt": prompt  
             }
         )
 
@@ -186,6 +186,20 @@ def import_next_paper_tasks(project_id: int) -> None:
                 "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
             })
             llm_answer = result.get("result") if isinstance(result, dict) else result
+            
+            # Access the retrieved chunks (source documents)
+            source_docs = result.get("source_documents", []) if isinstance(result, dict) else []
+            
+            # Format retrieved chunks for Label Studio
+            retrieved_chunks_text = ""
+            for i, doc in enumerate(source_docs):
+                retrieved_chunks_text += f"=== Chunk {i+1} ===\n"
+                retrieved_chunks_text += f"{doc.page_content}\n"
+                retrieved_chunks_text += f"Metadata: {doc.metadata}\n\n"
+            
+            print(f"\n=== QUERY: {q} ===")
+            print(f"LLM ANSWER: {llm_answer}")
+            print(f"RETRIEVED {len(source_docs)} CHUNKS")
 
             tasks.append(
                 {
@@ -193,7 +207,9 @@ def import_next_paper_tasks(project_id: int) -> None:
                         "paper_id": paper_id,
                         "title": "SOME TITLE | REPLACE LATER",
                         "paper_text": llm_answer or "NO LLM ANSWER",
+                        "retrieved_chunks": retrieved_chunks_text,
                         "class_criteria": q,
+                        "num_chunks": len(source_docs)
                     }
                 }
             )

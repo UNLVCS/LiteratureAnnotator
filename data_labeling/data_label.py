@@ -62,7 +62,7 @@ if __name__ == "__main__":
                 }
             }
 
-            vdb.upsert("article_upload_test_1", [record])
+            vdb.upsert("article_upload_test_2", [record])
         
         if i <= 0:
             break
