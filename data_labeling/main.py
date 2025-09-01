@@ -32,7 +32,7 @@ from queue_helpers import (
 vdb = VectorDb()
 embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
 vector_store = PineconeVectorStore(
-    index=vdb.__get_index__(), embedding=embedder, namespace="article_upload_test_1"
+    index=vdb.__get_index__(), embedding=embedder, namespace="article_upload_test_2"
 )
 
 llm = ChatOpenAI(model="gpt-4o")
@@ -44,9 +44,79 @@ qa_chain = RetrievalQA.from_chain_type(
     chain_type_kwargs={"prompt": prompt},
 )
 
+# prompts = [
+#     "What part of the paper talk about sample size ....",
+#     "etc...",
+# ]
+
+
 prompts = [
-    "What part of the paper talk about sample size ....",
-    "etc...",
+    # 1) Original research
+    """Criterion 1 – Original Research
+    Decide if the paper is an original research article (not a review, perspective, poster, or preprint).
+    - Positive signals: data collection + statistical analysis (often in Methods).
+    - Negative signals: clear mentions of review, perspective, poster, preprint.
+    Return JSON only:
+    {"criterion_1": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+
+    # 2) AD focus
+    """Criterion 2 – AD Focus
+    Decide if Alzheimer's Disease (AD) is the main focus (diagnosis, treatment, biomarkers, pathology; AD patients incl. MCI/at risk).
+    - Include AD biomarkers: amyloid-beta, tau.
+    - Exclude if focus is general neurodegeneration markers without AD specificity.
+    Return JSON only:
+    {"criterion_2": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+
+    # 3) Sample size >= 50 (leniency note)
+    """Criterion 3 – Sample Size
+    If human study: determine if sample size n >= 50.
+    - If stated n >= 50 → satisfied=true.
+    - If < 50 → satisfied=false (note: can be relaxed later if other criteria are very strong).
+    Return JSON only:
+    {"criterion_3": {"satisfied": true/false, "reason": "<brief reason; include n if found>"}}""",
+
+    # 4) Proteins as biomarkers (exclude gene/RNA/transcript/fragment focus)
+    """Criterion 4 – Protein Biomarkers
+    Decide if the study’s biomarker focus is on proteins (e.g., protein, amyloid, tau; beta-amyloid).
+    - Satisfied if protein focus is central and recurrent.
+    - Not satisfied if focus is genes/RNA/transcripts/fragments.
+    Return JSON only:
+    {"criterion_4": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+
+    # 5) Animal models exclusion (use human; flag patient cell-cultures)
+    """Criterion 5 – Animal Models Exclusion
+    Determine if the study uses animal models.
+    - If animal models are used → satisfied=false.
+    - If human data only → satisfied=true.
+    - If using patient-derived cell cultures (not animals), note that explicitly.
+    Return JSON only:
+    {"criterion_5": {"satisfied": true/false, "reason": "<brief reason; note 'patient cell cultures' if applicable>"}}""",
+
+    # 6) Blood as AD biomarker (not blood pressure)
+    """Criterion 6 – Blood as AD Biomarker
+    If 'blood' appears, decide if it is used as an AD biomarker (e.g., serum/plasma for amyloid/tau).
+    - Exclude circulatory measures (e.g., blood pressure, hypertension, vascular health).
+    Return JSON only:
+    {"criterion_6": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+
+    # Final aggregation (single-shot option)
+    """Final Classification – Aggregate
+    Evaluate Criteria 1–6 and produce the final binary classification:
+    - "relevant" if criteria strongly indicate AD-relevant original research (consider leniency on n<50 if others are strong).
+    - "irrelevant" otherwise.
+    Return JSON only and exactly this shape:
+    {
+    "criteria": {
+        "criterion_1": {"satisfied": true/false, "reason": "<...>"},
+        "criterion_2": {"satisfied": true/false, "reason": "<...>"},
+        "criterion_3": {"satisfied": true/false, "reason": "<...>"},
+        "criterion_4": {"satisfied": true/false, "reason": "<...>"},
+        "criterion_5": {"satisfied": true/false, "reason": "<...>"},
+        "criterion_6": {"satisfied": true/false, "reason": "<...>"}
+    },
+    "final_classification": "relevant/irrelevant",
+    "justification": "<overall reasoning>"
+    }"""
 ]
 
 LS = LabellerSDK()
@@ -158,14 +228,14 @@ def import_next_paper_tasks(project_id: int) -> None:
     if not paper_id:
         return
 
-    try:
+    try: 
         tasks = []
         # Create a retriever with metadata filter for this specific paper
         # and increase the number of results to get all chunks
         filtered_retriever = vector_store.as_retriever(
             search_kwargs={
                 "filter": {"doc": paper_id},  # Filter to only search within this paper
-                "k": 100  # Increase this if papers have more chunks
+                "k": 10  # Increase this if papers have more chunks
             }
         )
         
@@ -182,7 +252,7 @@ def import_next_paper_tasks(project_id: int) -> None:
 
         for q in prompts:
             result = paper_qa_chain.invoke({
-                "query": q,
+                "query": q, 
                 "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
             })
             llm_answer = result.get("result") if isinstance(result, dict) else result
@@ -197,9 +267,9 @@ def import_next_paper_tasks(project_id: int) -> None:
                 retrieved_chunks_text += f"{doc.page_content}\n"
                 retrieved_chunks_text += f"Metadata: {doc.metadata}\n\n"
             
-            print(f"\n=== QUERY: {q} ===")
-            print(f"LLM ANSWER: {llm_answer}")
-            print(f"RETRIEVED {len(source_docs)} CHUNKS")
+            # print(f"\n=== QUERY: {q} ===")
+            # print(f"LLM ANSWER: {llm_answer}")
+            # print(f"RETRIEVED {len(source_docs)} CHUNKS")
 
             tasks.append(
                 {

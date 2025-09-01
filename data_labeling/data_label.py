@@ -58,6 +58,7 @@ if __name__ == "__main__":
                 "metadata" : {
                     "text" : chunk,
                     "doc" : chnkd_article['id'],
+                    "title" : v['Title'],
                     "chunk" : i
                 }
             }
