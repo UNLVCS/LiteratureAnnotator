@@ -81,7 +81,7 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
 
     if  action == "PROJECT_CREATED":
         # If a new project is created, we can start importing tasks
-        proj_id = payload["project"]["id"] 
+        proj_id = payload["project"]["id"]  
         bg.add_task(import_next_paper_tasks, proj_id)
         return {"status": "ok", "event": "project_created"}
 

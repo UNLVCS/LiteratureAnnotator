@@ -46,9 +46,9 @@ class Labeller:
     
     def count_new_tasks(self, project_id):
         # Use requests directly since the SDK Client doesn't have a generic get method
+        # Filter for tasks that are not labeled (is_labeled=false) to get "new" tasks
         response = requests.get(
-            f"{self.ls.url}/api/projects/{project_id}/tasks?status=new&limit=0",
-            # f"{self.ls.url}/api/projects/{project_id}/tasks?status=new&limit=0",
+            f"{self.ls.url}/api/projects/{project_id}/tasks?is_labeled=false&limit=0",
             headers=self.headers
         )
         response.raise_for_status()

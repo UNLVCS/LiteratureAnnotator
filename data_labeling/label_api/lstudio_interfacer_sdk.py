@@ -78,16 +78,24 @@ class LabellerSDK:
     # -----------------------------
     @staticmethod
     def _status_filter_json(status_value: str) -> str:
-        """Build Data Manager filters JSON string for a task status."""
+        """Build Data Manager filters JSON string for a task status.
+        
+        Note: Label Studio uses 'is_labeled' field, not 'status'.
+        - "new" tasks = is_labeled = false
+        - "completed" tasks = is_labeled = true
+        """
+        # Map status values to is_labeled boolean
+        is_labeled_value = True if status_value == "completed" else False
+        
         filters = {
             "filters": {
                 "conjunction": "and",
                 "items": [
                     {
-                        "filter": "filter:tasks:status",
+                        "filter": "filter:tasks:is_labeled",
                         "operator": "equal",
-                        "type": "Choice",
-                        "value": status_value,
+                        "type": "Boolean",
+                        "value": is_labeled_value,
                     }
                 ],
             }
@@ -106,8 +114,9 @@ class LabellerSDK:
             page_size=page_size,
         )
         total = 0
-        for page in pager.iter_pages():
-            total += len(page)
+        # Iterate through individual tasks instead of pages
+        for task in pager:
+            total += 1
         return total
 
     def get_completed_tasks(self, project_id: Optional[int] = None) -> List[Any]:
