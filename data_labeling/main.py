@@ -12,8 +12,8 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from vector_db import VectorDb
 import json
-from typing import Any, Dict, Optional, Tuple
-
+from typing import Any, Dict, Optional, Tuple   
+ 
 # Queue helpers (use these instead of any local Redis calls)
 from queue_helpers import (
     enqueue_paper_id,
@@ -149,9 +149,9 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
     # print(payload.get("event", "no_event"))
 
 
-    if  action == "PROJECT_CREATED":
+    if  action == "PROJECT_CREATED": 
         # If a new project is created, we can start importing tasks
-        proj_id = payload["project"]["id"]  
+        proj_id = payload["project"]["id"]   
         bg.add_task(import_next_paper_tasks, proj_id)
         return {"status": "ok", "event": "project_created"}
 
@@ -174,7 +174,7 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
     if new_count == 0:
         bg.add_task(import_next_paper_tasks, proj_id)
 
-    return {"status": "ok"}
+    return {"status": "ok"} 
 
 
 # --------------------

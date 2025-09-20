@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader, DistributedSampler, random_split
 from transformers import T5ForConditionalGeneration, T5TokenizerFast, BitsAndBytesConfig, AutoConfig
 from transformers.optimization import Adafactor, get_scheduler
 from transformers.models.t5.modeling_t5 import T5Block
-from ADBM.t5_super_finetune.ignore_me.dataset_utils import T5Dataset, DataCollatorForT5
+from dataset_utils import T5Dataset, DataCollatorForT5
 from tqdm import tqdm
 import deepspeed
 import os
