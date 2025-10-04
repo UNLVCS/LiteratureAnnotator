@@ -1,0 +1,22 @@
+# Core LangChain dependencies
+langchain>=0.1.0
+langchain-core>=0.1.0
+
+# Provider-specific LangChain integrations
+langchain-openai>=0.1.0
+langchain-anthropic>=0.1.0
+langchain-huggingface>=0.1.0
+
+# Additional dependencies
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+requests>=2.25.0
+
+# Optional: For local model support
+torch>=1.9.0
+transformers>=4.20.0
+accelerate>=0.20.0
+
+# Optional: For additional providers
+# langchain-google-genai>=0.1.0  # For Google Gemini
+# langchain-community>=0.1.0     # For additional community providers
