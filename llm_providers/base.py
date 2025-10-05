@@ -18,7 +18,7 @@ class ModelType(Enum):
 @dataclass
 class Query:
     """Standardized query structure for LLM providers"""
-    prompt: str
+    prompt: Dict[str]
     model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: Optional[int] = None
@@ -28,6 +28,10 @@ class Query:
     stop: Optional[List[str]] = None
     system_message: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+
+    def stringify_prompt(self):
+        self.prompt = str(self.prompt)
+
 
 
 @dataclass

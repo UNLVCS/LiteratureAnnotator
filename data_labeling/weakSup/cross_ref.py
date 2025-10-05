@@ -10,15 +10,18 @@ from llm_providers import (
     Query
 )
 
-def cross_ref(llm: BaseLLMProvider, Candidate: Dict[any]):
+# def cross_ref(llm: BaseLLMProvider, Candidate: Dict[any]):
 
-    judge_me(llm)
-    for candidate in Candidate:
-        for llm_judge in LLMs:
-            if candidate['model'] == llm_judge.get_provider_name():
-                continue
-            judge_me(llm_judge, candidate['data'])
-    pass
+#     judge_me(llm)
+#     for candidate in Candidate:
+#         for llm_judge in LLMs:
+#             if candidate['model'] == llm_judge.get_provider_name():
+#                 continue
+#             judge_me(llm_judge, candidate['data'])
+#     pass
+
+
+    
 
 def init_query(query_path: str) -> Query:
     with open(query_path, 'r') as f:

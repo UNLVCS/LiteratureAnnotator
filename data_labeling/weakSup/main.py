@@ -1,4 +1,5 @@
 from typing import Iterable
+import json
 from snorkel.labeling import LabelingFunction
 from cross_ref import cross_ref, judge_me
 from heuristics import heuristics
@@ -17,14 +18,28 @@ from llm_providers import (
 # Values that a LabelFunction should spit out according to Snorkel
 ABSTAIN = -1, INCORRECT = 0, CORRECT = 1
 
-def Rater():
+class Rater():
+    def __init__(self, model: BaseLLMProvider, query: Query) -> None:
+        self.model = model
+        self.query = query
+
     @property
-    def name(self) -> str: ...
+    def name(self) -> str: self.model.get_provider_name
+
+
     def score_pair(self, generated_label: str, justificiation: str, rubric: Dict[str, Any]) -> Dict[str, float]:
         # Call LLM adapters here 
-        pass
+        self.query['generated_label'] = generated_label
+        self.query['justificiation'] = justificiation
+        
+        score, conf = self.model.call_api(query=self.query)
 
-def cross_ref_judge(model, rater: Rater, target: LLMResponse, rubric: Dict[str, Any]) -> int:
+        return {
+                    "Score": score,
+                    "Confidence": conf
+                }
+
+def cross_ref_judge(model, rater: Rater, target: Dict[Any], rubric: Dict[str, Any]) -> int:
     """
         Returns CORRECT/INCORRECT/ABSTAIN for 'rater judges target' on row x.
             Assumes x has attributes: model_name, inference, justification.
@@ -32,11 +47,11 @@ def cross_ref_judge(model, rater: Rater, target: LLMResponse, rubric: Dict[str, 
         Logic for other label functions is encapsulated elsewhere
     """
 
-    if model.get_provider_name == target.model:
+    if model.get_provider_name == target["model"]:
         return ABSTAIN
     
     try:
-        out = rater.score_pair(model.generated_label, model.justification, rubric)
+        out = rater.score_pair(target["generated_label"], target["justification"], rubric)
     except:
         return ABSTAIN
     
@@ -61,15 +76,15 @@ def rubic_num(rubric: Dict[str, Any], key: str, default: float) -> float:
     except Exception:
         return default
 
-def make_pair_lf(rater: Rater, target: LLMResponse, rubric: Dict[str, any]) -> LabelingFunction:
+def make_pair_lf(rater: Rater, target: Dict[Any], rubric: Dict[str, any]) -> LabelingFunction:
     """
         Creates one LF named 'lf_<rater>_judges_<target>' and injects dependencies
     """
-    lf_name = f"lf_{rater.name}_judges_{target.model}"
-    resources = {"rater": rater, "target": target, "rubric": dict(rubric)}
+    lf_name = f"lf_{rater.name}_judges_{target["model"]}"
+    resources = {"rater": rater, "target": target, "rubric": dict[rubric]}
     return LabelingFunction(name = lf_name, f = cross_ref_judge, resources = resources)
 
-def build_pairwise_lfs(raters: Iterable[any], rubric: Dict[str, Any]) -> List[LabelingFunction]:
+def build_pairwise_lfs(raters: Iterable[any], targets: Iterable[Dict], rubric: Dict[str, Any]) -> List[LabelingFunction]:
     lfs: List[LabelingFunction] = []
     raters = list(raters)
     targets = list(targets)
@@ -80,14 +95,64 @@ def build_pairwise_lfs(raters: Iterable[any], rubric: Dict[str, Any]) -> List[La
                 continue
             lfs.append(make_pair_lf(r, t, rubric))
 
-@labeling_function('CrossReferencer', cross_ref, {})
-def cross_ref_lf():
-    pass
 
-@labeling_function('Heuristics', heuristics, {})
-def heuristics_lf():
-    pass
+def RaterFactory(params_path: str, query_path: str) -> List[Rater]:
 
-@labeling_function('ResearchersScores', researchers_scores, {})
-def researcher_scores():
-    pass
+    def init_query(query_path: str) -> Query:
+        with open(query_path, 'r') as f:
+            query_dict = json.load(f)
+        return Query(**query_dict)
+
+    def init_llms(params_path: str) -> List:
+        """
+        Initialize all LLM providers using the given parameter dictionary.
+
+        Args:
+            params (Dict[any]): Dictionary containing parameters for each provider.
+                Example:
+                    {
+                        "openai": {"api_key": "...", "model": "...", ...},
+                        "anthropic": {"api_key": "...", "model": "...", ...},
+                        "huggingface": {"api_key": "...", "model": "...", ...}
+                    }
+
+        Returns:
+            List: List of initialized LLM provider instances.
+        """
+        with open(params_path, 'r') as f:
+            params = json.load(f)
+            
+        llms = []
+        if "openai" in params:
+            openai_params = params["openai"]
+            llms.append(OpenAIProvider(**openai_params))
+        if "anthropic" in params:
+            anthropic_params = params["anthropic"]
+            llms.append(AnthropicProvider(**anthropic_params))
+        if "huggingface" in params:
+            hf_params = params["huggingface"]
+            llms.append(HuggingFaceProvider(**hf_params))
+        return llms
+
+    llms = init_llms(params_path=params_path)
+    query = init_query(query_path=query_path)
+
+    ratersList = []
+    for llm in llms:
+        rater = Rater(model=llm, query=query)
+        ratersList.append(rater)
+# @labeling_function('CrossReferencer', cross_ref, {})
+# def cross_ref_lf():
+#     pass
+
+# @labeling_function('Heuristics', heuristics, {})
+# def heuristics_lf():
+#     pass
+
+# @labeling_function('ResearchersScores', researchers_scores, {})
+# def researcher_scores():
+#     pass
+
+
+if __name__ == "__main__":
+    raters = RaterFactory(params_path='./', query_path='./')
