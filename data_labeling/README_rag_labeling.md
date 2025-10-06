@@ -5,7 +5,8 @@ This script generates labeled data using RAG (Retrieval-Augmented Generation) ch
 ## Features
 
 - **Multi-provider support**: Works with OpenAI, Anthropic, and Hugging Face models
-- **RAG-based processing**: Uses vector store to retrieve relevant paper chunks
+- **Smart RAG processing**: Uses vector similarity search to retrieve the most relevant chunks for each specific criteria
+- **Targeted retrieval**: Each criteria query is embedded and used to find the most relevant paper sections
 - **Batch processing**: Processes multiple papers efficiently
 - **Queue integration**: Works with the existing Redis-based paper queue
 - **Comprehensive criteria**: Evaluates papers on 6 different criteria plus final classification
@@ -93,13 +94,15 @@ The script generates JSON files with the following structure:
           "reason": "This is an original research article..."
         }
       },
-      "raw_response": "{\"criterion_1\": {...}}"
+      "raw_response": "{\"criterion_1\": {...}}",
+      "chunks_used": 5
     }
   ],
   "final_classification": {
     "criteria": {...},
     "final_classification": "relevant",
-    "justification": "Overall reasoning..."
+    "justification": "Overall reasoning...",
+    "chunks_used": 10
   },
   "chunks_processed": 15,
   "errors": []

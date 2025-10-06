@@ -10,7 +10,7 @@ data based on the same criteria as the main.py webhook system.
 import os
 import json
 import sys
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, List
 from pathlib import Path
 
 # Add the llm_providers to the path
@@ -26,14 +26,12 @@ from llm_providers import (
 # Import the existing components
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain_core.prompts import ChatPromptTemplate
 from langchain import hub
 from vector_db import VectorDb
 from queue_helpers import (
     claim_next_paper,
     ack_paper,
     requeue_inflight,
-    pop_paper_id,
     paper_queue_len
 )
 
@@ -172,6 +170,30 @@ class RAGLabelingGenerator:
         docs = filtered_retriever.get_relevant_documents("")
         return docs
     
+    def get_relevant_chunks_for_criteria(self, paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Retrieve the most relevant chunks for a specific criteria query using vector similarity search
+        
+        Args:
+            paper_id: ID of the paper to search within
+            criteria_query: The specific criteria query to search for
+            k: Number of most relevant chunks to retrieve
+            
+        Returns:
+            List of most relevant document chunks for this criteria
+        """
+        # Create a retriever with metadata filter for this specific paper
+        filtered_retriever = self.vector_store.as_retriever(
+            search_kwargs={
+                "filter": {"doc": paper_id},
+                "k": k  # Get top k most relevant chunks for this specific query
+            }
+        )
+        
+        # Use the criteria query to find most relevant chunks
+        docs = filtered_retriever.get_relevant_documents(criteria_query)
+        return docs
+    
     def create_rag_query(self, paper_chunks: List[Dict[str, Any]], criteria_prompt: str) -> str:
         """
         Create a RAG query by combining paper chunks with the criteria prompt
@@ -190,15 +212,15 @@ class RAGLabelingGenerator:
         
         full_context = "\n".join(context_parts)
         
-        # Create the RAG query
+        # Create the RAG query with context instruction like in main.py
         rag_query = f"""
-Context from the research paper:
-{full_context}
+            Context from the research paper:
+            {full_context}
 
-Task: {criteria_prompt}
+            Task: {criteria_prompt}
 
-Please analyze the provided paper chunks and respond according to the criteria.
-"""
+            Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections.
+            """
         return rag_query
     
     def process_paper_with_provider(self, paper_id: str, provider_name: str) -> Dict[str, Any]:
@@ -237,7 +259,14 @@ Please analyze the provided paper chunks and respond according to the criteria.
             # Process each criteria
             for i, criteria_prompt in enumerate(self.criteria_prompts[:-1]):  # Exclude final aggregation
                 try:
-                    rag_query = self.create_rag_query(paper_chunks, criteria_prompt)
+                    # Get relevant chunks for this specific criteria using vector similarity
+                    relevant_chunks = self.get_relevant_chunks_for_criteria(paper_id, criteria_prompt, k=5)
+                    
+                    if not relevant_chunks:
+                        results["errors"].append(f"No relevant chunks found for criterion {i+1}")
+                        continue
+                    
+                    rag_query = self.create_rag_query(relevant_chunks, criteria_prompt)
                     
                     query = Query(
                         prompt=rag_query,
@@ -255,7 +284,8 @@ Please analyze the provided paper chunks and respond according to the criteria.
                             "criterion": f"criterion_{i+1}",
                             "prompt": criteria_prompt,
                             "response": criteria_result,
-                            "raw_response": response.content
+                            "raw_response": response.content,
+                            "chunks_used": len(relevant_chunks)
                         })
                     except json.JSONDecodeError:
                         results["criteria_results"].append({
@@ -263,7 +293,8 @@ Please analyze the provided paper chunks and respond according to the criteria.
                             "prompt": criteria_prompt,
                             "response": None,
                             "raw_response": response.content,
-                            "error": "Failed to parse JSON"
+                            "error": "Failed to parse JSON",
+                            "chunks_used": len(relevant_chunks)
                         })
                         
                 except Exception as e:
@@ -272,13 +303,21 @@ Please analyze the provided paper chunks and respond according to the criteria.
                         "criterion": f"criterion_{i+1}",
                         "prompt": criteria_prompt,
                         "response": None,
-                        "error": str(e)
+                        "error": str(e),
+                        "chunks_used": 0
                     })
             
             # Process final aggregation
             try:
                 final_prompt = self.criteria_prompts[-1]
-                rag_query = self.create_rag_query(paper_chunks, final_prompt)
+                # For final aggregation, get more chunks since we need to consider the whole paper
+                final_chunks = self.get_relevant_chunks_for_criteria(paper_id, final_prompt, k=10)
+                
+                if not final_chunks:
+                    results["errors"].append("No relevant chunks found for final classification")
+                    final_chunks = paper_chunks  # Fallback to all chunks
+                
+                rag_query = self.create_rag_query(final_chunks, final_prompt)
                 
                 query = Query(
                     prompt=rag_query,
@@ -291,16 +330,20 @@ Please analyze the provided paper chunks and respond according to the criteria.
                 
                 try:
                     final_result = json.loads(response.content)
-                    results["final_classification"] = final_result
+                    results["final_classification"] = {
+                        **final_result,
+                        "chunks_used": len(final_chunks)
+                    }
                 except json.JSONDecodeError:
                     results["final_classification"] = {
                         "error": "Failed to parse final classification JSON",
-                        "raw_response": response.content
+                        "raw_response": response.content,
+                        "chunks_used": len(final_chunks)
                     }
                     
             except Exception as e:
                 results["errors"].append(f"Final classification failed: {str(e)}")
-                results["final_classification"] = {"error": str(e)}
+                results["final_classification"] = {"error": str(e), "chunks_used": 0}
                 
         except Exception as e:
             results["errors"].append(f"Paper processing failed: {str(e)}")
