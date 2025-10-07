@@ -16,6 +16,7 @@ from pathlib import Path
 # Add the llm_providers to the path
 sys.path.append(str(Path(__file__).parent.parent / "llm_providers"))
 
+from data_labeling.main import prompt
 from llm_providers import (
     OpenAIProvider, 
     AnthropicProvider, 
@@ -26,6 +27,7 @@ from llm_providers import (
 # Import the existing components
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+from langchain.chains import RetrievalQA
 from langchain import hub
 from vector_db import VectorDb
 from queue_helpers import (
@@ -63,6 +65,7 @@ class RAGLabelingGenerator:
         # Load the RAG prompt
         self.prompt = hub.pull("rlm/rag-prompt")
         
+        self.pqa_chain =
         # Define the same criteria prompts as in main.py
         self.criteria_prompts = [
             # 1) Original research
@@ -170,7 +173,7 @@ class RAGLabelingGenerator:
         docs = filtered_retriever.get_relevant_documents("")
         return docs
     
-    def get_relevant_chunks_for_criteria(self, paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
+    def return_pqa_chain(self, paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
         Retrieve the most relevant chunks for a specific criteria query using vector similarity search
         
@@ -191,10 +194,26 @@ class RAGLabelingGenerator:
         )
         
         # Use the criteria query to find most relevant chunks
-        docs = filtered_retriever.get_relevant_documents(criteria_query)
+        # docs = filtered_retriever.get_relevant_documents(criteria_query)
+        pqa_chain = RetrievalQA.from_chain_type(
+            model = self.embedder,
+            retriever = filtered_retriever,
+            return_source_documents = True,
+            chain_type = "stuff",
+            chain_type_kwargs = {
+                "prompt": self.prompt
+            }
+        )
+
+        # Docs is a list of documents returned from the vector store, and likely contain sections that have answers for our criterias
+        docs = pqa_chain.invoke({
+            "query": criteria_query,
+            "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
+        })
+
         return docs
     
-    def create_rag_query(self, paper_chunks: List[Dict[str, Any]], criteria_prompt: str) -> str:
+    def create_inference_query(self, paper_chunks: List[Dict[str, Any]], criteria_prompt: str) -> str:
         """
         Create a RAG query by combining paper chunks with the criteria prompt
         
@@ -213,7 +232,7 @@ class RAGLabelingGenerator:
         full_context = "\n".join(context_parts)
         
         # Create the RAG query with context instruction like in main.py
-        rag_query = f"""
+        inference_query = f"""
             Context from the research paper:
             {full_context}
 
@@ -221,7 +240,7 @@ class RAGLabelingGenerator:
 
             Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections.
             """
-        return rag_query
+        return inference_query
     
     def process_paper_with_provider(self, paper_id: str, provider_name: str) -> Dict[str, Any]:
         """
@@ -246,107 +265,98 @@ class RAGLabelingGenerator:
             "chunks_processed": 0,
             "errors": []
         }
-        
-        try:
-            # Get paper chunks
-            paper_chunks = self.get_paper_chunks(paper_id)
-            results["chunks_processed"] = len(paper_chunks)
-            
-            if not paper_chunks:
-                results["errors"].append("No chunks found for paper")
-                return results
-            
             # Process each criteria
-            for i, criteria_prompt in enumerate(self.criteria_prompts[:-1]):  # Exclude final aggregation
-                try:
-                    # Get relevant chunks for this specific criteria using vector similarity
-                    relevant_chunks = self.get_relevant_chunks_for_criteria(paper_id, criteria_prompt, k=5)
-                    
-                    if not relevant_chunks:
-                        results["errors"].append(f"No relevant chunks found for criterion {i+1}")
-                        continue
-                    
-                    rag_query = self.create_rag_query(relevant_chunks, criteria_prompt)
-                    
-                    query = Query(
-                        prompt=rag_query,
-                        system_message="You are an expert research analyst. Analyze the provided paper content and respond with valid JSON only.",
-                        temperature=0.1,  # Low temperature for consistent results
-                        max_tokens=500
-                    )
-                    
-                    response = provider.call_api(query)
-                    
-                    # Try to parse JSON response
-                    try:
-                        criteria_result = json.loads(response.content)
-                        results["criteria_results"].append({
-                            "criterion": f"criterion_{i+1}",
-                            "prompt": criteria_prompt,
-                            "response": criteria_result,
-                            "raw_response": response.content,
-                            "chunks_used": len(relevant_chunks)
-                        })
-                    except json.JSONDecodeError:
-                        results["criteria_results"].append({
-                            "criterion": f"criterion_{i+1}",
-                            "prompt": criteria_prompt,
-                            "response": None,
-                            "raw_response": response.content,
-                            "error": "Failed to parse JSON",
-                            "chunks_used": len(relevant_chunks)
-                        })
-                        
-                except Exception as e:
-                    results["errors"].append(f"Criterion {i+1} failed: {str(e)}")
-                    results["criteria_results"].append({
-                        "criterion": f"criterion_{i+1}",
-                        "prompt": criteria_prompt,
-                        "response": None,
-                        "error": str(e),
-                        "chunks_used": 0
-                    })
-            
-            # Process final aggregation
+        for i, criteria_prompt in enumerate(self.criteria_prompts[:-1]):  # Exclude final aggregation
             try:
-                final_prompt = self.criteria_prompts[-1]
-                # For final aggregation, get more chunks since we need to consider the whole paper
-                final_chunks = self.get_relevant_chunks_for_criteria(paper_id, final_prompt, k=10)
+                # Get relevant chunks for this specific criteria using vector similarity
+                relevant_chunks = self.return_pqa_chain(paper_id, criteria_prompt, k=5)
                 
-                if not final_chunks:
-                    results["errors"].append("No relevant chunks found for final classification")
-                    final_chunks = paper_chunks  # Fallback to all chunks
+                if not relevant_chunks:
+                    results["errors"].append(f"No relevant chunks found for criterion {i+1}")
+                    continue
                 
-                rag_query = self.create_rag_query(final_chunks, final_prompt)
-                
+                # rag_query = self.create_rag_query(relevant_chunks, criteria_prompt)
+                inference_query = self.create_inference_query(relevant_chunks, criteria_prompt)
+
                 query = Query(
-                    prompt=rag_query,
+                    prompt=inference_query,
                     system_message="You are an expert research analyst. Analyze the provided paper content and respond with valid JSON only.",
-                    temperature=0.1,
-                    max_tokens=1000
+                    temperature=0.1,  # Low temperature for consistent results
+                    max_tokens=500
                 )
                 
                 response = provider.call_api(query)
                 
+                # Try to parse JSON response
                 try:
-                    final_result = json.loads(response.content)
-                    results["final_classification"] = {
-                        **final_result,
-                        "chunks_used": len(final_chunks)
-                    }
-                except json.JSONDecodeError:
-                    results["final_classification"] = {
-                        "error": "Failed to parse final classification JSON",
+                    criteria_result = json.loads(response.content)
+                    results["criteria_results"].append({
+                        "criterion": f"criterion_{i+1}",
+                        "prompt": criteria_prompt,
+                        "response": criteria_result,
                         "raw_response": response.content,
-                        "chunks_used": len(final_chunks)
-                    }
+                        "chunks_used": len(relevant_chunks)
+                    })
+                except json.JSONDecodeError:
+                    results["criteria_results"].append({
+                        "criterion": f"criterion_{i+1}",
+                        "prompt": criteria_prompt,
+                        "response": None,
+                        "raw_response": response.content,
+                        "error": "Failed to parse JSON",
+                        "chunks_used": len(relevant_chunks)
+                    })
                     
             except Exception as e:
-                results["errors"].append(f"Final classification failed: {str(e)}")
-                results["final_classification"] = {"error": str(e), "chunks_used": 0}
+                results["errors"].append(f"Criterion {i+1} failed: {str(e)}")
+                results["criteria_results"].append({
+                    "criterion": f"criterion_{i+1}",
+                    "prompt": criteria_prompt,
+                    "response": None,
+                    "error": str(e),
+                    "chunks_used": 0
+                })
+            
+            # Process final aggregation
+            # try:
+                # final_prompt = self.criteria_prompts[-1]
+                # For final aggregation, get more chunks since we need to consider the whole paper
+                # final_chunks = self.get_relevant_chunks_for_criteria(paper_id, final_prompt, k=10)
+                # 
+                # if not final_chunks:
+                    # results["errors"].append("No relevant chunks found for final classification")
+                    # final_chunks = paper_chunks  # Fallback to all chunks
+                # 
+                # rag_query = self.create_rag_query(final_chunks, final_prompt)
+                # 
+                # query = Query(
+                    # prompt=rag_query,
+                    # system_message="You are an expert research analyst. Analyze the provided paper content and respond with valid JSON only.",
+                    # temperature=0.1,
+                    # max_tokens=1000
+                # )
+                # 
+                # response = provider.call_api(query)
+                # 
+                # try:
+                    # final_result = json.loads(response.content)
+                    # results["final_classification"] = {
+                        # **final_result,
+                        # "chunks_used": len(final_chunks)
+                    # }
+                # except json.JSONDecodeError:
+                    # results["final_classification"] = {
+                        # "error": "Failed to parse final classification JSON",
+                        # "raw_response": response.content,
+                        # "chunks_used": len(final_chunks)
+                    # }
+                    
+            # except Exception as e:
+                # results["errors"].append(f"Final classification failed: {str(e)}")
+                # results["final_classification"] = {"error": str(e), "chunks_used": 0}
                 
-        except Exception as e:
-            results["errors"].append(f"Paper processing failed: {str(e)}")
+        # except Exception as e:
+        #     results["errors"].append(f"Paper processing failed: {str(e)}")
         
         return results
     
