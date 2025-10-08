@@ -20,3 +20,6 @@ accelerate>=0.20.0
 # Optional: For additional providers
 # langchain-google-genai>=0.1.0  # For Google Gemini
 # langchain-community>=0.1.0     # For additional community providers
+
+# Note: OLLAMA provider uses requests library (already included above)
+# OLLAMA server must be running locally on http://localhost:11434

@@ -9,6 +9,7 @@ from .base import BaseLLMProvider, Query, LLMResponse
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
 from .huggingface_provider import HuggingFaceProvider
+from .ollama_provider import OllamaProvider
 
 __all__ = [
     'BaseLLMProvider',
@@ -16,5 +17,6 @@ __all__ = [
     'LLMResponse',
     'OpenAIProvider',
     'AnthropicProvider',
-    'HuggingFaceProvider'
+    # 'HuggingFaceProvider',
+    'OllamaProvider'
 ]

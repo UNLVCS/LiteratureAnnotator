@@ -10,13 +10,16 @@ from llm_providers import (
     OpenAIProvider, 
     AnthropicProvider, 
     HuggingFaceProvider,
+    OllamaProvider,
     Query,
     LLMResponse
 )
 
 
 # Values that a LabelFunction should spit out according to Snorkel
-ABSTAIN = -1, INCORRECT = 0, CORRECT = 1
+ABSTAIN = -1
+INCORRECT = 0
+CORRECT = 1
 
 class Rater():
     def __init__(self, model: BaseLLMProvider, query: Query) -> None:
@@ -24,7 +27,8 @@ class Rater():
         self.query = query
 
     @property
-    def name(self) -> str: self.model.get_provider_name
+    def name(self) -> str: 
+        return self.model.get_provider_name()
 
 
     def score_pair(self, generated_label: str, justificiation: str, rubric: Dict[str, Any]) -> Dict[str, float]:
@@ -132,6 +136,9 @@ def RaterFactory(params_path: str, query_path: str) -> List[Rater]:
         if "huggingface" in params:
             hf_params = params["huggingface"]
             llms.append(HuggingFaceProvider(**hf_params))
+        if "ollama" in params:
+            ollama_params = params["ollama"]
+            llms.append(OllamaProvider(**ollama_params))
         return llms
 
     llms = init_llms(params_path=params_path)

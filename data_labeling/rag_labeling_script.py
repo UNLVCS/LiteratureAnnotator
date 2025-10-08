@@ -21,6 +21,7 @@ from llm_providers import (
     OpenAIProvider, 
     AnthropicProvider, 
     HuggingFaceProvider,
+    OllamaProvider,
     Query
 )
 
@@ -65,7 +66,6 @@ class RAGLabelingGenerator:
         # Load the RAG prompt
         self.prompt = hub.pull("rlm/rag-prompt")
         
-        self.pqa_chain =
         # Define the same criteria prompts as in main.py
         self.criteria_prompts = [
             # 1) Original research
@@ -146,6 +146,8 @@ class RAGLabelingGenerator:
                     self.providers[provider_name] = AnthropicProvider(**config)
                 elif provider_name.lower() == "huggingface":
                     self.providers[provider_name] = HuggingFaceProvider(**config)
+                elif provider_name.lower() == "ollama":
+                    self.providers[provider_name] = OllamaProvider(**config)
                 else:
                     print(f"Warning: Unknown provider {provider_name}")
             except Exception as e:
@@ -436,37 +438,61 @@ def main():
     Main function to run the RAG labeling script
     """
     # Configuration for different providers
-    provider_configs = {
-        "openai": {
-            "api_key": os.getenv("OPENAI_API_KEY"),
-            "model": "gpt-4o",
-            "temperature": 0.1
-        },
-        "anthropic": {
-            "api_key": os.getenv("ANTHROPIC_API_KEY"),
-            "model": "claude-3-sonnet-20240229",
-            "temperature": 0.1
-        },
-        "huggingface": {
-            "api_key": os.getenv("HUGGINGFACE_API_TOKEN"),
-            "model": "microsoft/DialoGPT-medium",
-            "temperature": 0.1
-        }
-    }
+
+    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root_dir, "llm_params.json")) as f:
+        provider_configs = json.load(f)
+    # provider_configs = [for provider_name, config in params.items()]
+    # provider_configs = {
+    #     "openai": {
+    #         "api_key": os.getenv("OPENAI_API_KEY"),
+    #         "model": "gpt-4o",
+    #         "temperature": 0.1
+    #     },
+    #     "anthropic": {
+    #         "api_key": os.getenv("ANTHROPIC_API_KEY"),
+    #         "model": "claude-3-sonnet-20240229",
+    #         "temperature": 0.1
+    #     },
+    #     "huggingface": {
+    #         "api_key": os.getenv("HUGGINGFACE_API_TOKEN"),
+    #         "model": "microsoft/DialoGPT-medium",
+    #         "temperature": 0.1
+    #     },
+    #     "ollama": {
+    #         "api_key": "dummy",  # Not used for OLLAMA
+    #         "model": "llama3.1",
+    #         "base_url": "http://falcon9.cs.unlv.edu:11434",
+    #         "temperature": 0.1,
+    #         "timeout": 120
+    #     }
+    # 
     
-    # Filter out providers without API keys
+    # Filter out providers without API keys (except OLLAMA which uses local server)
     available_providers = {}
     for name, config in provider_configs.items():
-        if config.get("api_key"):
+        if name.lower() == "ollama":
+            # For OLLAMA, check if server is running instead of API key
+            try:
+                temp_provider = OllamaProvider(**config)
+                if temp_provider.check_server_status():
+                    available_providers[name] = config
+                    print(f"OLLAMA server is running - {name} provider available")
+                else:
+                    print(f"Skipping {name} - OLLAMA server not running (start with 'ollama serve')")
+            except Exception as e:
+                print(f"Skipping {name} - OLLAMA setup failed: {e}")
+        elif config.get("api_key"):
             available_providers[name] = config
         else:
             print(f"Skipping {name} - no API key found")
     
     if not available_providers:
-        print("No providers available. Please set API keys:")
+        print("No providers available. Please set API keys or start OLLAMA server:")
         print("- OPENAI_API_KEY")
         print("- ANTHROPIC_API_KEY")
         print("- HUGGINGFACE_API_TOKEN")
+        print("- For OLLAMA: run 'ollama serve' and ensure models are pulled (e.g., 'ollama pull llama3.1')")
         return
     
     # Initialize the generator

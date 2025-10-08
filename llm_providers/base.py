@@ -18,7 +18,7 @@ class ModelType(Enum):
 @dataclass
 class Query:
     """Standardized query structure for LLM providers"""
-    prompt: Dict[str]
+    prompt: Dict[str, str]
     model: Optional[str] = None
     temperature: float = 0.7
     max_tokens: Optional[int] = None
