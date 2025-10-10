@@ -1,0 +1,31 @@
+{
+    "openai": {
+        "api_key": "",
+        "model": "gpt-4o",
+        "temperature": 0.1,
+        "skip": true
+    },
+    "anthropic": {
+        "api_key": "",
+        "model": "claude-3-sonnet-20240229",
+        "temperature": 0.1,
+        "skip": true
+    },
+    "huggingface": {
+        "api_key": "your_huggingface_token_here",
+        "model": "microsoft/DialoGPT-medium",
+        "temperature": 0.1,
+        "skip": true
+    },
+    "ollama": {
+        "api_key": "dummy",
+        "model": "gpt-oss:20b",
+        "base_url": "",
+        "temperature": 0.1,
+        "timeout": 120000,
+        "skip": false,
+        "options": {
+            "think": false
+        }
+    }
+}

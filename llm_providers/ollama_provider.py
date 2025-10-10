@@ -5,7 +5,7 @@ OLLAMA provider implementation using direct API calls
 import requests
 import json
 from typing import List, Dict, Any, Optional
-from base import BaseLLMProvider, Query, LLMResponse
+from .base import BaseLLMProvider, Query, LLMResponse
 
 
 class OllamaProvider(BaseLLMProvider):

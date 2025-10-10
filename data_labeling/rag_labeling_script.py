@@ -13,22 +13,22 @@ import sys
 from typing import Any, Dict, List
 from pathlib import Path
 
-# Add the llm_providers to the path
-sys.path.append(str(Path(__file__).parent.parent / "llm_providers"))
+# Add the parent directory to the path so we can import llm_providers
+sys.path.append(str(Path(__file__).parent.parent))
 
-from data_labeling.main import prompt
-from llm_providers import (
-    OpenAIProvider, 
-    AnthropicProvider, 
-    HuggingFaceProvider,
-    OllamaProvider,
-    Query
-)
+# Import from the llm_providers package
+from llm_providers.base import BaseLLMProvider, Query, LLMResponse
+from llm_providers.openai_provider import OpenAIProvider
+from llm_providers.anthropic_provider import AnthropicProvider
+from llm_providers.huggingface_provider import HuggingFaceProvider
+from llm_providers.ollama_provider import OllamaProvider
 
 # Import the existing components
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.chains import RetrievalQA
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
 from langchain import hub
 from vector_db import VectorDb
 from queue_helpers import (
@@ -175,7 +175,7 @@ class RAGLabelingGenerator:
         docs = filtered_retriever.get_relevant_documents("")
         return docs
     
-    def return_pqa_chain(self, paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
+    def return_relevant_chunks(self, paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
         Retrieve the most relevant chunks for a specific criteria query using vector similarity search
         
@@ -197,22 +197,24 @@ class RAGLabelingGenerator:
         
         # Use the criteria query to find most relevant chunks
         # docs = filtered_retriever.get_relevant_documents(criteria_query)
-        pqa_chain = RetrievalQA.from_chain_type(
-            model = self.embedder,
-            retriever = filtered_retriever,
-            return_source_documents = True,
-            chain_type = "stuff",
-            chain_type_kwargs = {
-                "prompt": self.prompt
-            }
-        )
+        # pqa_chain = RetrievalQA.from_chain_type(
+        #     llm = self.embedder,
+        #     retriever = filtered_retriever,
+        #     return_source_documents = True,
+        #     chain_type = "stuff",
+        #     chain_type_kwargs = {
+        #         "prompt": self.prompt
+        #     }
+        # )
 
-        # Docs is a list of documents returned from the vector store, and likely contain sections that have answers for our criterias
-        docs = pqa_chain.invoke({
-            "query": criteria_query,
-            "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
-        })
+        # pqa_chain = create_stuff_documents_chain(self.llm, self.prompt)
 
+        # # Docs is a list of documents returned from the vector store, and likely contain sections that have answers for our criterias
+        # docs = pqa_chain.invoke({
+        #     "query": criteria_query,
+        #     "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
+        # })
+        docs = filtered_retriever.get_relevant_documents(criteria_query)
         return docs
     
     def create_inference_query(self, paper_chunks: List[Dict[str, Any]], criteria_prompt: str) -> str:
@@ -271,7 +273,7 @@ class RAGLabelingGenerator:
         for i, criteria_prompt in enumerate(self.criteria_prompts[:-1]):  # Exclude final aggregation
             try:
                 # Get relevant chunks for this specific criteria using vector similarity
-                relevant_chunks = self.return_pqa_chain(paper_id, criteria_prompt, k=5)
+                relevant_chunks = self.return_relevant_chunks(paper_id, criteria_prompt, k=5)
                 
                 if not relevant_chunks:
                     results["errors"].append(f"No relevant chunks found for criterion {i+1}")
@@ -471,6 +473,8 @@ def main():
     # Filter out providers without API keys (except OLLAMA which uses local server)
     available_providers = {}
     for name, config in provider_configs.items():
+        if config.get("skip", False):
+            continue
         if name.lower() == "ollama":
             # For OLLAMA, check if server is running instead of API key
             try:

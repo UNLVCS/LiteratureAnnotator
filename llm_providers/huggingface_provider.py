@@ -3,7 +3,7 @@ Hugging Face provider implementation using LangChain
 """
 
 from typing import List, Dict, Any, Optional
-from langchain_huggingface import HuggingFacePipeline, HuggingFaceHub
+from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
 from langchain.schema import HumanMessage, SystemMessage
 from .base import BaseLLMProvider, Query, LLMResponse
 
@@ -23,7 +23,7 @@ class HuggingFaceProvider(BaseLLMProvider):
             **kwargs: Additional HuggingFace-specific configuration
         """
         super().__init__(api_key, model, **kwargs)
-        self.llm = HuggingFaceHub(
+        self.llm = ChatHuggingFace(
             huggingfacehub_api_token=api_key,
             repo_id=model or 'microsoft/DialoGPT-medium',
             model_kwargs={
