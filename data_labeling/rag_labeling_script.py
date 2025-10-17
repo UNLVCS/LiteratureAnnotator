@@ -12,6 +12,7 @@ import json
 import sys
 from typing import Any, Dict, List
 from pathlib import Path
+from response_standardizer import standardize_llm_response
 
 # Add the parent directory to the path so we can import llm_providers
 sys.path.append(str(Path(__file__).parent.parent))
@@ -318,22 +319,25 @@ class RAGLabelingGenerator:
                 
                 response = provider.call_api(query)
                 
-                # Try to parse JSON response
-                try:
-                    criteria_result = json.loads(response.content)
+                # Use the standardizer to parse JSON response
+                parsed_json, cleaned_content, success = standardize_llm_response(response.content)
+                
+                if success and parsed_json:
                     results["criteria_results"].append({
                         "criterion": f"criterion_{i+1}",
                         "prompt": criteria_prompt,
-                        "response": criteria_result,
+                        "response": parsed_json,
                         "raw_response": response.content,
+                        "cleaned_response": cleaned_content,
                         "chunks_used": len(relevant_chunks)
                     })
-                except json.JSONDecodeError:
+                else:
                     results["criteria_results"].append({
                         "criterion": f"criterion_{i+1}",
                         "prompt": criteria_prompt,
                         "response": None,
                         "raw_response": response.content,
+                        "cleaned_response": cleaned_content,
                         "error": "Failed to parse JSON",
                         "chunks_used": len(relevant_chunks)
                     })
