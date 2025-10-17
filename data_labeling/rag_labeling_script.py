@@ -138,20 +138,47 @@ class RAGLabelingGenerator:
     
     def setup_providers(self, provider_configs: Dict[str, Dict[str, Any]]):
         """Setup LLM providers based on configuration"""
-        for provider_name, config in provider_configs.items():
-            try:
-                if provider_name.lower() == "openai":
-                    self.providers[provider_name] = OpenAIProvider(**config)
-                elif provider_name.lower() == "anthropic":
-                    self.providers[provider_name] = AnthropicProvider(**config)
-                elif provider_name.lower() == "huggingface":
-                    self.providers[provider_name] = HuggingFaceProvider(**config)
-                elif provider_name.lower() == "ollama":
-                    self.providers[provider_name] = OllamaProvider(**config)
-                else:
-                    print(f"Warning: Unknown provider {provider_name}")
-            except Exception as e:
-                print(f"Failed to setup provider {provider_name}: {e}")
+        # for provider_name, config in provider_configs.items():
+        #     try:
+        #         if provider_name.lower() == "openai":
+        #             self.providers[provider_name] = OpenAIProvider(**config)
+        #         elif provider_name.lower() == "anthropic":
+        #             self.providers[provider_name] = AnthropicProvider(**config)
+        #         elif provider_name.lower() == "huggingface":
+        #             self.providers[provider_name] = HuggingFaceProvider(**config)
+        #         elif provider_name.lower() == "ollama":
+        #             self.providers[provider_name] = OllamaProvider(**config)
+        #         else:
+        #             print(f"Warning: Unknown provider {provider_name}")
+        #     except Exception as e:
+        #         print(f"Failed to setup provider {provider_name}: {e}")
+        for provider, models in provider_configs.items():
+            for model in models:
+                if model['skip']: 
+                    continue
+                if provider != "ollama" and model["api_key"]:
+                    print(f"Skipping {model['model']} - no API key found")
+
+                if "openai" == provider:
+                    openai_params = model
+                    self.providers[model['model']] = OpenAIProvider(**openai_params)
+                if "anthropic" == provider:
+                    anthropic_params = model
+                    self.providers[model['model']] = AnthropicProvider(**anthropic_params)
+                if "huggingface" == provider:
+                    hf_params = model
+                    self.providers[model['model']] = HuggingFaceProvider(**hf_params)
+                if "ollama" == provider:
+                    ollama_params = model
+                    try:
+                        temp_provider = OllamaProvider(**ollama_params)
+                        if temp_provider.check_server_status():
+                            self.providers[model['model']] = OllamaProvider(**ollama_params)
+                            print(f"OLLAMA server is running - {model['model']} provider available")
+                        else:
+                            print(f"Skipping {model['model']} - OLLAMA server not running (start with 'ollama serve')")
+                    except Exception as e:
+                        print(f"Skipping {model['model']} - OLLAMA setup failed: {e}")
     
     def get_paper_chunks(self, paper_id: str) -> List[Dict[str, Any]]:
         """
@@ -442,7 +469,7 @@ def main():
     # Configuration for different providers
 
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root_dir, "llm_params.json")) as f:
+    with open(os.path.join(root_dir, "llm_params2.json")) as f:
         provider_configs = json.load(f)
     # provider_configs = [for provider_name, config in params.items()]
     # provider_configs = {
@@ -472,41 +499,69 @@ def main():
     
     # Filter out providers without API keys (except OLLAMA which uses local server)
     available_providers = {}
-    for name, config in provider_configs.items():
-        if config.get("skip", False):
-            continue
-        if name.lower() == "ollama":
-            # For OLLAMA, check if server is running instead of API key
-            try:
-                temp_provider = OllamaProvider(**config)
-                if temp_provider.check_server_status():
-                    available_providers[name] = config
-                    print(f"OLLAMA server is running - {name} provider available")
-                else:
-                    print(f"Skipping {name} - OLLAMA server not running (start with 'ollama serve')")
-            except Exception as e:
-                print(f"Skipping {name} - OLLAMA setup failed: {e}")
-        elif config.get("api_key"):
-            available_providers[name] = config
-        else:
-            print(f"Skipping {name} - no API key found")
+    # for provider, models in provider_configs.items():
+    #     for model in models:
+    #         if model['skip']: 
+    #             continue
+    #         if provider != "ollama" and model["api_key"]:
+    #             print(f"Skipping {model['model']} - no API key found")
+
+    #         if "openai" == provider:
+    #             openai_params = model
+    #             available_providers[model['model']] = OpenAIProvider(**openai_params)
+    #         if "anthropic" == provider:
+    #             anthropic_params = model
+    #             available_providers[model['model']] = AnthropicProvider(**anthropic_params)
+    #         if "huggingface" == provider:
+    #             hf_params = model
+    #             available_providers[model['model']] = HuggingFaceProvider(**hf_params)
+    #         if "ollama" == provider:
+    #             ollama_params = model
+    #             try:
+    #                 temp_provider = OllamaProvider(**ollama_params)
+    #                 if temp_provider.check_server_status():
+    #                     available_providers[model['model']] = OllamaProvider(**ollama_params)
+    #                     print(f"OLLAMA server is running - {model['model']} provider available")
+    #                 else:
+    #                     print(f"Skipping {model['model']} - OLLAMA server not running (start with 'ollama serve')")
+    #             except Exception as e:
+    #                 print(f"Skipping {model['model']} - OLLAMA setup failed: {e}")
+
+    # for name, config in provider_configs.items():
+    #     if config.get("skip", False):
+    #         continue
+    #     if name.lower() == "ollama":
+    #         # For OLLAMA, check if server is running instead of API key
+    #         try:
+    #             temp_provider = OllamaProvider(**config)
+    #             if temp_provider.check_server_status():
+    #                 available_providers[name] = config
+    #                 print(f"OLLAMA server is running - {name} provider available")
+    #             else:
+    #                 print(f"Skipping {name} - OLLAMA server not running (start with 'ollama serve')")
+    #         except Exception as e:
+    #             print(f"Skipping {name} - OLLAMA setup failed: {e}")
+    #     elif config.get("api_key"):
+    #         available_providers[name] = config
+    #     else:
+    #         print(f"Skipping {name} - no API key found")
     
-    if not available_providers:
-        print("No providers available. Please set API keys or start OLLAMA server:")
-        print("- OPENAI_API_KEY")
-        print("- ANTHROPIC_API_KEY")
-        print("- HUGGINGFACE_API_TOKEN")
-        print("- For OLLAMA: run 'ollama serve' and ensure models are pulled (e.g., 'ollama pull llama3.1')")
-        return
+    # if not available_providers:
+    #     print("No providers available. Please set API keys or start OLLAMA server:")
+    #     print("- OPENAI_API_KEY")
+    #     print("- ANTHROPIC_API_KEY")
+    #     print("- HUGGINGFACE_API_TOKEN")
+    #     print("- For OLLAMA: run 'ollama serve' and ensure models are pulled (e.g., 'ollama pull llama3.1')")
+    #     return
     
     # Initialize the generator
-    generator = RAGLabelingGenerator(available_providers)
+    generator = RAGLabelingGenerator(provider_configs)
     
     # Process papers
     print("Starting RAG-based labeling generation...")
     results = generator.process_papers_batch(
-        num_papers=5,  # Adjust as needed
-        providers=list(available_providers.keys())
+        num_papers=50,  # Adjust as needed
+        # providers=list(available_providers.keys())
     )
     
     # Save final results

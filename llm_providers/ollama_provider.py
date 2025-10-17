@@ -46,12 +46,13 @@ class OllamaProvider(BaseLLMProvider):
         payload = {
             "model": model_name,
             "prompt": query.prompt,
+            "think": False,
             "stream": False,
             "options": {
                 "temperature": query.temperature,
                 "top_p": query.top_p,
                 "num_predict": query.max_tokens or 4000,  # Default to 4000 if not specified
-                "stop": query.stop if query.stop else []
+                "stop": query.stop if query.stop else [],
             }
         }
         
