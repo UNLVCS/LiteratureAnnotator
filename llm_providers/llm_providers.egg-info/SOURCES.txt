@@ -1,7 +1,0 @@
-README.md
-setup.py
-llm_providers.egg-info/PKG-INFO
-llm_providers.egg-info/SOURCES.txt
-llm_providers.egg-info/dependency_links.txt
-llm_providers.egg-info/requires.txt
-llm_providers.egg-info/top_level.txt
