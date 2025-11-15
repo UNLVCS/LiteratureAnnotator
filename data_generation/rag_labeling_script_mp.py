@@ -2,9 +2,9 @@
 """
 RAG-based Data Labeling Script using LLM Providers (Global Functions)
 
-This script generates labeled data using RAG chains with multiple LLM providers
-instead of just GPT. It processes papers from a queue and generates labeled
-data based on the same criteria as the main.py webhook system.
+This script generates labeled data using RAG chains with multiple LLM providers.
+It processes papers from a queue and generates labeled and fetches 
+semantically relevant chunks from a vector store.
 
 This version uses global functions and variables for multiprocessing compatibility.
 """
@@ -33,13 +33,27 @@ from llm_providers.ollama_provider import OllamaProvider
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
-from vector_db import VectorDb
-from queue_helpers import (
+from utilities.vector_db import VectorDb
+from utilities.queue_helpers import (
     claim_next_paper,
     ack_paper,
     requeue_inflight,
     paper_queue_len
 )
+from minio import Minio
+from io import BytesIO
+client = Minio(
+    "localhost:5000",
+    access_key="minioadmin",
+    secret_key="minioadmin",
+    secure=False
+)
+bucket_name = "criteria-classified-articles"
+if not client.bucket_exists(bucket_name):
+    print(f"Bucket {bucket_name} does not exist. Creating it...")
+    client.make_bucket(bucket_name)
+else:
+    print(f"Bucket {bucket_name} already exists.")
 
 # Global variables for shared resources
 _embedder = None
@@ -137,6 +151,7 @@ def setup_providers(provider_configs: Dict[str, Dict[str, Any]]):
     
     for provider, models in provider_configs.items():
         for model in models:
+            # print(type(model))
             if model['skip']: 
                 continue
             if provider != "ollama" and not model.get("api_key"):
@@ -208,9 +223,9 @@ def return_relevant_chunks(paper_id: str, criteria_query: str, k: int = 5) -> Li
     docs = filtered_retriever.get_relevant_documents(criteria_query)
     return docs
 
-def create_inference_query(paper_chunks: List[Dict[str, Any]], criteria_prompt: str) -> str:
+def create_inference_query(full_context: str, criteria_prompt: str) -> str:
     """
-    Create a RAG query by combining paper chunks with the criteria prompt
+    Create an inference query by combining paper chunks with the criteria prompt
     
     Args:
         paper_chunks: List of document chunks from the paper
@@ -219,13 +234,6 @@ def create_inference_query(paper_chunks: List[Dict[str, Any]], criteria_prompt: 
     Returns:
         Combined query string for the LLM
     """
-    # Combine all chunks into a single context
-    context_parts = []
-    for i, chunk in enumerate(paper_chunks):
-        context_parts.append(f"=== Chunk {i+1} ===\n{chunk.page_content}\n")
-    
-    full_context = "\n".join(context_parts)
-    
     # Create the RAG query with context instruction like in main.py
     inference_query = f"""
         Context from the research paper:
@@ -266,12 +274,18 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
         try:
             # Get relevant chunks for this specific criteria using vector similarity
             relevant_chunks = return_relevant_chunks(paper_id, criteria_prompt, k=5)
+            # Combine all chunks into a single context
+            context_parts = []
+            for i, chunk in enumerate(relevant_chunks):
+                context_parts.append(f"=== Chunk {i+1} ===\n{chunk.page_content}\n")
             
+            full_context = "\n".join(context_parts)
+
             if not relevant_chunks:
                 results["errors"].append(f"No relevant chunks found for criterion {i+1}")
                 continue
 
-            inference_query = create_inference_query(relevant_chunks, criteria_prompt)
+            inference_query = create_inference_query(full_context, criteria_prompt)
 
             query = Query(
                 prompt=inference_query,
@@ -292,7 +306,8 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
                     "response": parsed_json,
                     "raw_response": response.content,
                     "cleaned_response": cleaned_content,
-                    "chunks_used": len(relevant_chunks)
+                    "chunks_used": len(relevant_chunks),
+                    "full_context": full_context
                 })
             else:
                 results["criteria_results"].append({
@@ -302,7 +317,8 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
                     "raw_response": response.content,
                     "cleaned_response": cleaned_content,
                     "error": "Failed to parse JSON",
-                    "chunks_used": len(relevant_chunks)
+                    "chunks_used": len(relevant_chunks),
+                    "full_context": full_context
                 })
                 
         except Exception as e:
@@ -312,7 +328,8 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
                 "prompt": criteria_prompt,
                 "response": None,
                 "error": str(e),
-                "chunks_used": 0
+                "chunks_used": 0,
+                "full_context": full_context
             })
             
     return results
@@ -330,7 +347,7 @@ def worker_process(provider_name: str, provider_config: BaseLLMProvider,
         max_papers: Maximum number of papers to process (None for unlimited)
     """
     try:
-        # Initialize shared resources if not already done
+        # Initialize shared resources
         initialize_shared_resources()
         
         # Create provider instance for this worker
@@ -529,12 +546,21 @@ def save_results(results: List[Dict[str, Any]], filename: str = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"rag_labeling_results_{timestamp}.json"
     
-    output_path = Path(__file__).parent / filename
-    
-    with open(output_path, 'w') as f:
-        json.dump(results, f, indent=2)
-    
-    print(f"Results saved to {output_path}")
+    for result in results:
+        if len(result['errors']) != 0:
+            print(f"Result {result['paper_id']} has errors: {result['errors']}")
+            continue
+        json_data = json.dumps(result).encode('utf-8')
+        content_length = len(json_data)
+        client.put_object(
+            bucket_name = bucket_name,   
+            object_name = f"{result['provider']}/{result['paper_id']}.json",
+            data = BytesIO(json_data),
+            length = content_length,
+            content_type = "application/json"
+        )   
+
+    print(f"Results saved to {bucket_name}")
 
 def main():
     """
@@ -542,7 +568,7 @@ def main():
     """
     # Configuration for different providers
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root_dir, "llm_params2.json")) as f:
+    with open(os.path.join(root_dir, "llm_params/llm_params3.json")) as f:
         provider_configs = json.load(f)
     
     # Initialize shared resources

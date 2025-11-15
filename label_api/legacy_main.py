@@ -13,6 +13,7 @@ from langchain_pinecone import PineconeVectorStore
 from vector_db import VectorDb
 import json
 from typing import Any, Dict, Optional, Tuple   
+from minio import Minio
  
 # Queue helpers (use these instead of any local Redis calls)
 from queue_helpers import (
@@ -23,7 +24,13 @@ from queue_helpers import (
     requeue_inflight,
     push_completed_annotation,
 )
-
+client = Minio(
+    "localhost:5000",
+    access_key="minioadmin",
+    secret_key="minioadmin",
+    secure=False
+)
+bucket_name = "criteria-classified-articles"
 
 # --------------------
 # RAG / Model setup
@@ -230,65 +237,91 @@ def import_next_paper_tasks(project_id: int) -> None:
 
     try: 
         tasks = []
-        # Create a retriever with metadata filter for this specific paper
-        # and increase the number of results to get all chunks
-        filtered_retriever = vector_store.as_retriever(
-            search_kwargs={
-                "filter": {"doc": paper_id},  # Filter to only search within this paper
-                "k": 10  # Increase this if papers have more chunks
-            }
-        )
-        
-        # Create a new QA chain with the filtered retriever
-        paper_qa_chain = RetrievalQA.from_chain_type(
-            llm,
-            retriever=filtered_retriever,
-            return_source_documents=True,
-            chain_type="stuff",  # Explicitly set to use stuff chain 
-            chain_type_kwargs={
-                "prompt": prompt  
-            }
-        )
 
-        for q in prompts:
-            result = paper_qa_chain.invoke({
-                "query": q, 
-                "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
-            })
-            llm_answer = result.get("result") if isinstance(result, dict) else result
-            
-            # Access the retrieved chunks (source documents)
-            source_docs = result.get("source_documents", []) if isinstance(result, dict) else []
-            
-            # Format retrieved chunks for Label Studio
-            retrieved_chunks_text = ""
-            for i, doc in enumerate(source_docs):
-                retrieved_chunks_text += f"=== Chunk {i+1} ===\n"
-                retrieved_chunks_text += f"{doc.page_content}\n"
-                retrieved_chunks_text += f"Metadata: {doc.metadata}\n\n"
-            
-            # print(f"\n=== QUERY: {q} ===")
-            # print(f"LLM ANSWER: {llm_answer}")
-            # print(f"RETRIEVED {len(source_docs)} CHUNKS")
+        providers = ['gpt-4o', 'gpt-oss:20b', 'qwen:235b']
 
-            tasks.append(
-                {
-                    "data": {
+        for provider in providers:
+            try:
+                object_name = f"{provider}/{paper_id}.json"
+                response = client.get_object(bucket_name = bucket_name, object_name = object_name)
+                data = response.data.decode('utf-8')
+                paper_data = json.loads(data)
+                print(f"Paper data for {provider}: {paper_data}")
+            except Exception as e:
+                print(f"Error getting paper {paper_id} data for {provider}: {e}")
+                continue
+
+            if not paper_data:
+                print(f"No paper data found for {paper_id}")
+                if claim_token:
+                    ack_paper(claim_token)
+                return
+            
+            for criteria_res in paper_data.get("criteria_results", []):
+                tasks.append({
+                    data: {
                         "paper_id": paper_id,
-                        "title": "SOME TITLE | REPLACE LATER",
-                        "paper_text": llm_answer or "NO LLM ANSWER",
-                        "retrieved_chunks": retrieved_chunks_text,
-                        "class_criteria": q,
-                        "num_chunks": len(source_docs)
+                        "title": paper_data.get("title", "Title N/A"),
+                        "paper_text": criteria_res.get("response", {}).get("reason", "NO LLM ANSWER"),
+                        "retrieved_chunks": criteria_res.get("chunks_used", 0),
+                        "class_criteria": criteria_res.get("prompt", "NO CLASS CRITERIA"),
+                        "num_chunks": criteria_res.get("chunks_used", 0),
+                        "full_context": criteria_res.get("full_context", "NO FULL CONTEXT")
                     }
-                }
-            )
+                })
+            # tasks.append(
+            #     {
+            #         "data": {
+            #             "paper_id": paper_id,
+            #             "title": paper_data.get("title", "Title N/A"),
+            #             "paper_text": llm_answer or "NO LLM ANSWER",
+            #             "retrieved_chunks": retrieved_chunks_text,
+            #             "class_criteria": q,
+            #             "num_chunks": len(source_docs)
+            #         }
+            #     }
+            # )
+        
 
-        LS.import_tasks(tasks)
+        # for q in prompts:
+        #     result = paper_qa_chain.invoke({
+        #         "query": q, 
+        #         "context": "Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections."
+        #     })
+        #     llm_answer = result.get("result") if isinstance(result, dict) else result
+            
+        #     # Access the retrieved chunks (source documents)
+        #     source_docs = result.get("source_documents", []) if isinstance(result, dict) else []
+            
+        #     # Format retrieved chunks for Label Studio
+        #     retrieved_chunks_text = ""
+        #     for i, doc in enumerate(source_docs):
+        #         retrieved_chunks_text += f"=== Chunk {i+1} ===\n"
+        #         retrieved_chunks_text += f"{doc.page_content}\n"
+        #         retrieved_chunks_text += f"Metadata: {doc.metadata}\n\n"
+            
+        #     # print(f"\n=== QUERY: {q} ===")
+        #     # print(f"LLM ANSWER: {llm_answer}")
+        #     # print(f"RETRIEVED {len(source_docs)} CHUNKS")
 
-        # Acknowledge the claimed item only if we used the claim pattern
-        if claim_token:
-            ack_paper(claim_token)
+        #     tasks.append(
+        #         {
+        #             "data": {
+        #                 "paper_id": paper_id,
+        #                 "title": "SOME TITLE | REPLACE LATER",
+        #                 "paper_text": llm_answer or "NO LLM ANSWER",
+        #                 "retrieved_chunks": retrieved_chunks_text,
+        #                 "class_criteria": q,
+        #                 "num_chunks": len(source_docs)
+        #             }
+        #         }
+        #     )
+
+        # LS.import_tasks(tasks)
+
+        # # Acknowledge the claimed item only if we used the claim pattern
+        # if claim_token:
+        #     ack_paper(claim_token)
 
     except Exception:
         # If something failed after claiming, requeue the inflight item

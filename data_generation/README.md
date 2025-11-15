@@ -1,6 +1,6 @@
 # RAG-based Data Labeling Script
 
-This script generates labeled data using RAG (Retrieval-Augmented Generation) chains with multiple LLM providers instead of just GPT. It processes papers from a queue and generates labeled data based on the same criteria as the main webhook system.
+This script generates labeled data using RAG (Retrieval-Augmented Generation) chains with multiple LLM providers instead of just GPT. It processes papers from a queue and generates labeled data based on a set of crieteiras.
 
 ## Features
 

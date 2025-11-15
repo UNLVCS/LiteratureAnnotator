@@ -1,0 +1,13 @@
+{
+    "criterion": "criterion_1",
+    "prompt": "Criterion 1 – Original Research\n            Decide if the paper is an original research article (not a review, perspective, poster, or preprint).\n            - Positive signals: data collection + statistical analysis (often in Methods).\n            - Negative signals: clear mentions of review, perspective, poster, preprint.\n            Return JSON only:\n            {\"criterion_1\": {\"satisfied\": true/false, \"reason\": \"<brief reason>\"}}",
+    "response": {
+        "criterion_1": {
+            "satisfied": false,
+            "reason": "The provided chunks do not contain sufficient information about data collection, statistical analysis, or other indicators of original research. There is no clear evidence from the text provided that this is an original research article as opposed to a review or perspective."
+        }
+    },
+    "raw_response": "{\"criterion_1\": {\"satisfied\": false, \"reason\": \"The provided chunks do not contain sufficient information about data collection, statistical analysis, or other indicators of original research. There is no clear evidence from the text provided that this is an original research article as opposed to a review or perspective.\"}}",
+    "cleaned_response": "{\"criterion_1\": {\"satisfied\": false, \"reason\": \"The provided chunks do not contain sufficient information about data collection, statistical analysis, or other indicators of original research. There is no clear evidence from the text provided that this is an original research article as opposed to a review or perspective.\"}}",
+    "chunks_used": 5
+}
