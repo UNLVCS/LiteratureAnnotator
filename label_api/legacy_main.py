@@ -6,17 +6,17 @@ from label_api.lstudio_interfacer_sdk import LabellerSDK
 # from label_api.lstudio_interfacer import Labeller
 from langchain_openai import ChatOpenAI 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import RetrievalQA
+from langchain.chains import RetrievalQA 
 from langchain import hub
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from vector_db import VectorDb
+# from utilities.vector_db import VectorDb
 import json
 from typing import Any, Dict, Optional, Tuple   
 from minio import Minio
  
 # Queue helpers (use these instead of any local Redis calls)
-from queue_helpers import (
+from utilities.queue_helpers import (
     enqueue_paper_id,
     pop_paper_id,             # simple pattern
     claim_next_paper,         # safer pattern (claim + ack/requeue)
@@ -36,20 +36,20 @@ bucket_name = "criteria-classified-articles"
 # RAG / Model setup
 # --------------------
 
-vdb = VectorDb()
-embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
-vector_store = PineconeVectorStore(
-    index=vdb.__get_index__(), embedding=embedder, namespace="article_upload_test_2"
-)
+# vdb = VectorDb()
+# embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
+# vector_store = PineconeVectorStore(
+#     index=vdb.__get_index__(), embedding=embedder, namespace="article_upload_test_2"
+# )
 
-llm = ChatOpenAI(model="gpt-4o")
-prompt = hub.pull("rlm/rag-prompt")
+# llm = ChatOpenAI(model="gpt-4o")
+# prompt = hub.pull("rlm/rag-prompt")
 
-qa_chain = RetrievalQA.from_chain_type(
-    llm,
-    retriever=vector_store.as_retriever(),
-    chain_type_kwargs={"prompt": prompt},
-)
+# qa_chain = RetrievalQA.from_chain_type(
+#     llm,
+#     retriever=vector_store.as_retriever(),
+#     chain_type_kwargs={"prompt": prompt},
+# )
 
 # prompts = [
 #     "What part of the paper talk about sample size ....",
@@ -259,7 +259,7 @@ def import_next_paper_tasks(project_id: int) -> None:
             
             for criteria_res in paper_data.get("criteria_results", []):
                 tasks.append({
-                    data: {
+                    "data": {
                         "paper_id": paper_id,
                         "title": paper_data.get("title", "Title N/A"),
                         "paper_text": criteria_res.get("response", {}).get("reason", "NO LLM ANSWER"),
@@ -317,11 +317,11 @@ def import_next_paper_tasks(project_id: int) -> None:
         #         }
         #     )
 
-        # LS.import_tasks(tasks)
+        LS.import_tasks(tasks)
 
-        # # Acknowledge the claimed item only if we used the claim pattern
-        # if claim_token:
-        #     ack_paper(claim_token)
+        # Acknowledge the claimed item only if we used the claim pattern
+        if claim_token:
+            ack_paper(claim_token)
 
     except Exception:
         # If something failed after claiming, requeue the inflight item
