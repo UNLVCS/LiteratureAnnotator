@@ -2,7 +2,7 @@ import os
 import redis
 
 # Import the enqueue_paper_id function from queue_helpers
-from data_labeling.queue_helpers import enqueue_paper_id
+from queue_helpers import enqueue_paper_id
 
 # Set up Redis connection
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -20,5 +20,6 @@ def seed_queue_from_file(file_path):
                     print(f"Duplicate or failed to enqueue: {paper_id}")
 
 # Path to your text file containing paper IDs
-file_path = 'test_papers.txt'
+# file_path = 'test_papers.txt'
+file_path = 'labeled_paper_ids.txt'
 seed_queue_from_file(file_path)

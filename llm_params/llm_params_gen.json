@@ -1,0 +1,57 @@
+{
+  "openai": [
+    {
+      "model": "gpt-4o",
+      "api_key": "YOUR_OPENAI_API_KEY",
+      "temperature": 0.1,
+      "skip": false
+    },
+    {
+      "model": "gpt-3.5-turbo",
+      "api_key": "YOUR_OPENAI_API_KEY",
+      "temperature": 0.1,
+      "skip": true
+    }
+  ],
+  "anthropic": [
+    {
+      "model": "claude-3-sonnet-20240229",
+      "api_key": "YOUR_ANTHROPIC_API_KEY",
+      "temperature": 0.1,
+      "skip": false
+    },
+    {
+      "model": "claude-3-opus-20240229",
+      "api_key": "YOUR_ANTHROPIC_API_KEY",
+      "temperature": 0.1,
+      "skip": true
+    }
+  ],
+  "huggingface": [
+    {
+      "model": "microsoft/DialoGPT-medium",
+      "api_key": "YOUR_HUGGINGFACE_API_TOKEN",
+      "temperature": 0.1,
+      "skip": true
+    }
+  ],
+  "ollama": [
+    {
+      "model": "llama3.1",
+      "api_key": "dummy",
+      "base_url": "http://falcon9.cs.unlv.edu:11434",
+      "temperature": 0.1,
+      "timeout": 120,
+      "skip": false
+    },
+    {
+      "model": "llama2",
+      "api_key": "dummy",
+      "base_url": "http://localhost:11434",
+      "temperature": 0.1,
+      "timeout": 120,
+      "skip": true
+    }
+  ]
+}
+

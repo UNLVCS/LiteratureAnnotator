@@ -34,7 +34,7 @@ def enqueue_paper_id(paper_id: str) -> bool:
     added = r.sadd(DEDUP_SET, paper_id)
     if added:
         r.rpush(PAPER_QUEUE, paper_id)
-    return bool(added)
+    return bool(added) 
 
 def pop_paper_id(block: bool = False, timeout: int = 0) -> str or None:
     """Simple pop (use when reliability is less critical)."""

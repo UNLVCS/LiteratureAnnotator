@@ -1,0 +1,61 @@
+{
+    "openai": [
+        {
+            "api_key": "",
+            "model": "gpt-4o",
+            "temperature": 0.1,
+            "skip": false
+        }
+    ],
+    "anthropic": [
+        {
+            "api_key": "",
+            "model": "claude-3-sonnet-20240229",
+            "temperature": 0.1,
+            "skip": true
+        }
+    ],
+    "huggingface": [
+        {
+            "api_key": "your_huggingface_token_here",
+            "model": "microsoft/DialoGPT-medium",
+            "temperature": 0.1,
+            "skip": true
+        }
+    ],
+    "ollama": [
+        {
+            "api_key": "dummy",
+            "model": "gpt-oss:20b",
+            "base_url": "http://localhost:11434",
+            "temperature": 0.1,
+            "timeout": 120000,
+            "skip": false,
+            "think": false,
+            "options": {
+            }
+        },
+        {
+            "api_key": "dummy",
+            "model": "qwen3:235b",
+            "base_url": "http://falcon9.cs.unlv.edu:11434",
+            "temperature": 0.1,
+            "timeout": 120000,
+            "skip": false,
+            "think": false,
+            "options": {
+            }
+        },
+        {
+            "api_key": "dummy",
+            "model": "some_other model",
+            "base_url": "",
+            "temperature": 0.1,
+            "timeout": 120000,
+            "skip": true,
+            "options": {
+                "think": false
+            }
+        }
+    ]
+}
