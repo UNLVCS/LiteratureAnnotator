@@ -48,13 +48,13 @@
         },
         {
             "api_key": "dummy",
-            "model": "some_other model",
-            "base_url": "",
+            "model": "gpt-oss:120b",
+            "base_url": "http://localhost:11435",
             "temperature": 0.1,
             "timeout": 120000,
-            "skip": true,
+            "skip": false,
+            "think": false,
             "options": {
-                "think": false
             }
         }
     ]

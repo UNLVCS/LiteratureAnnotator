@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Request, BackgroundTasks
+from fastapi import FastAPI, Request, BackgroundTasks 
 from pydantic import BaseModel
 from label_api.lstudio_interfacer_sdk import LabellerSDK
 # from label_api.lstudio_interfacer import Labeller
@@ -23,6 +23,7 @@ from utilities.queue_helpers import (
     ack_paper,
     requeue_inflight,
     push_completed_annotation,
+    claim_next_paper_from_set
 )
 client = Minio(
     "localhost:5000",
@@ -30,7 +31,7 @@ client = Minio(
     secret_key="minioadmin",
     secure=False
 )
-bucket_name = "criteria-classified-articles"
+bucket_name = "v4-criteria-classified-articles"
 
 # --------------------
 # RAG / Model setup
@@ -60,10 +61,16 @@ bucket_name = "criteria-classified-articles"
 LS = LabellerSDK()
 app = FastAPI()
 
-LS.create_webhook(
-    endpoint="http://localhost:8000/webhook"
-) 
-
+@app.on_event("startup")
+async def startup_event():
+    LS.create_webhook(
+        endpoint="http://localhost:8000/webhook"
+    )
+    # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
+    # This ensures tasks are loaded even if the project already exists
+    import_next_paper_tasks(LS.project_id)
+    return {"status": "ok"}
+ 
 # --------------------
 # Schemas
 # --------------------
@@ -112,7 +119,7 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
     if new_count == 0:
         bg.add_task(import_next_paper_tasks, proj_id)
 
-    return {"status": "ok"} 
+    return {"status": "ok"}  
 
 
 # --------------------
@@ -141,9 +148,9 @@ def _unpack_claim(claim: Any) -> Tuple[Optional[str], Optional[str]]:
     # Tuple or list shape
     if isinstance(claim, (tuple, list)) and len(claim) >= 2:
         return str(claim[0]) if claim[0] is not None else None, str(claim[1]) if claim[1] is not None else None
-    # Str shape (just an id, no claim token)
-    if isinstance(claim, str):
-        return claim, None
+    # Str shape (the paper_id IS the claim token for ack/requeue)
+    if isinstance(claim, str):  
+        return claim, claim
     return None, None
  
 
@@ -154,49 +161,72 @@ def import_next_paper_tasks(project_id: int) -> None:
     Creates a paper-specific RAG pipeline to ensure responses only come from the relevant paper.
     Retrieves ALL chunks for the paper to allow the LLM to reason over the complete content.
     """
-    paper_id: Optional[str] = None
+    paper_id: Optional[str] = None 
     claim_token: Optional[str] = None
 
     if USE_SAFE_QUEUE:
-        claim = claim_next_paper()
+        # claim = claim_next_paper()
+        claim = claim_next_paper_from_set()
+        # print("Claim: ", claim)
         paper_id, claim_token = _unpack_claim(claim)
     else:
-        paper_id = pop_paper_id()
+        paper_id = pop_paper_id()  
 
-    if not paper_id:
+    if not paper_id: 
+        print("No paper ID found") 
         return
-
+   
     try: 
-        tasks = []
+        tasks = []  
 
-        providers = ['gpt-4o', 'gpt-oss:20b', 'qwen:235b']
-        paper_data = None
+        providers = ['gpt-4o'] 
+        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b'] 
+        paper_data = None 
         for provider in providers:
             try:
                 object_name = f"{provider}/{paper_id}.json"
                 response = client.get_object(bucket_name = bucket_name, object_name = object_name)
-                data = response.data.decode('utf-8')
-                paper_data = json.loads(data)
-                print(f"Paper data for {provider}: {paper_data}")
+                data = response.data.decode('utf-8') 
+                paper_data = json.loads(data) 
+                print(f"Paper data for {provider}")
+                # print(f"Paper data for {provider}: {paper_data}")
             except Exception as e:
-                print(f"Error getting paper {paper_id} data for {provider}: {e}")
+                print(f"Error getting paper {paper_id} data for {provider}: {e}") 
                 continue
 
             if not paper_data:
                 print(f"No paper data found for {paper_id}")
                 if claim_token:
                     ack_paper(claim_token)
-                return            
+                return             
             for criteria_res in paper_data.get("criteria_results", []):
-                tasks.append({
+                # Extract the criterion name (e.g., "criterion_1")
+                criterion = criteria_res.get("criterion", "")
+                
+                # Extract data from the cleaned_response structure (the actual LLM output)
+                cleaned_response_str = criteria_res.get("cleaned_response", "{}")
+                # Parse the cleaned_response JSON string
+                try:
+                    response_obj = json.loads(cleaned_response_str) if isinstance(cleaned_response_str, str) else cleaned_response_str
+                except json.JSONDecodeError:
+                    response_obj = {}
+                
+                criterion_data = response_obj.get(criterion, {})
+                reason = criterion_data.get("reason", "NO LLM ANSWER") 
+                satisfied = criterion_data.get("satisfied", "unknown")
+                 
+                tasks.append({ 
                     "data": {
                         "paper_id": paper_id,
+                        "provider": provider,
+                        "criterion": criterion,
+                        "satisfied": satisfied,  
                         "title": paper_data.get("title", "Title N/A"),
-                        "paper_text": criteria_res.get("response", {}).get("reason", "NO LLM ANSWER"),
+                        "paper_text": reason,
                         "retrieved_chunks": criteria_res.get("chunks_used", 0),
                         "class_criteria": criteria_res.get("prompt", "NO CLASS CRITERIA"),
                         "num_chunks": criteria_res.get("chunks_used", 0),
-                        "full_context": criteria_res.get("full_context", "NO FULL CONTEXT")
+                        "full_context": criteria_res.get("full_context", "Full context not available")
                     }
                 })
 

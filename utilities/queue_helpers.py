@@ -7,6 +7,8 @@ PAPER_QUEUE     = os.getenv("PAPER_QUEUE", "q:papers:v1")
 PROCESSING_Q    = os.getenv("PAPER_PROCESSING", "q:papers:processing:v1")
 DEDUP_SET       = os.getenv("PAPER_DEDUP_SET", "s:papers:enqueued:v1")
 ANN_QUEUE       = os.getenv("ANN_QUEUE", "q:annotations:completed:v1")
+COMPLETED_PAPERS_QUEUE = os.getenv("COMPLETED_PAPERS_QUEUE", "q:papers:completed:v1")
+GENERATED_SET       = os.getenv("GENERATED_SET", "s:papers:generated:v1")
 
 # When the annotations queue grows beyond this threshold, persist to disk
 ANN_FLUSH_THRESHOLD = int(os.getenv("ANN_FLUSH_THRESHOLD", "1000"))
@@ -61,6 +63,8 @@ def claim_next_paper(block_timeout: int = 0) -> str or None:
             return None
             
         pid = r.brpoplpush(PAPER_QUEUE, PROCESSING_Q, timeout=block_timeout)
+        if pid:
+            enqueue_paper_id(pid) # Put it back in the queue just for now. REPLACE LATER
         return pid  # None on timeout
     except redis.exceptions.ConnectionError as e:
         print(f"Redis connection error while claiming paper: {e}")
@@ -68,6 +72,15 @@ def claim_next_paper(block_timeout: int = 0) -> str or None:
     except redis.exceptions.RedisError as e:
         print(f"Redis error while claiming paper: {e}")
         raise
+
+def claim_next_paper_from_set(block_timeout: int = 0) -> str or None:
+    """Claim a paper from the deduplication set."""
+    pid = r.spop(GENERATED_SET)
+    if pid:
+        r.rpush(PROCESSING_Q, pid)
+    if pid:
+        return pid
+    return None
 
 def ack_paper(paper_id: str) -> None:
     """Remove from processing + dedupe set after success."""
@@ -221,3 +234,38 @@ if ANN_INSTALL_SIGNAL_HANDLERS:
 def shutdown_annotations() -> None:
     """Public helper to proactively flush annotations before process exit."""
     _flush_annotations_on_shutdown()
+
+def push_completed_paper(paper_id: str) -> None:
+    """Add a paper ID to the completed papers queue."""
+    r.rpush(COMPLETED_PAPERS_QUEUE, paper_id)
+
+def get_all_completed_papers() -> list:
+    """Retrieve all completed paper IDs from the queue (non-destructive)."""
+    return r.lrange(COMPLETED_PAPERS_QUEUE, 0, -1)
+
+def completed_papers_count() -> int:
+    """Return the count of completed papers in the queue."""
+    return r.llen(COMPLETED_PAPERS_QUEUE)
+
+def export_completed_papers_to_file(filepath: str = "completed_papers.txt") -> int:
+    """Export all completed paper IDs to a text file (one per line).
+    
+    Returns the number of paper IDs exported.
+    """
+    paper_ids = get_all_completed_papers()
+    
+    if not paper_ids:
+        print("No completed papers to export")
+        return 0
+    
+    # Ensure directory exists
+    dirname = os.path.dirname(filepath)
+    if dirname:
+        os.makedirs(dirname, exist_ok=True)
+    
+    with open(filepath, 'w', encoding='utf-8') as f:
+        for paper_id in paper_ids:
+            f.write(f"{paper_id}\n")
+    
+    print(f"Exported {len(paper_ids)} completed paper IDs to {filepath}")
+    return len(paper_ids)

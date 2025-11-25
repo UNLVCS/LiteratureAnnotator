@@ -1,5 +1,6 @@
 data/
-*.pyc
+**/*.pyc
+__pycache__/
 ignore_me
 *.ipynb
 **/*.ipynb

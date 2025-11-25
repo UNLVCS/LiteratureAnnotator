@@ -1,128 +1,93 @@
 <!--
   Label Studio Labeling Configuration
-  Based on the provided sketch.
-  This configuration is designed for evaluating a retrieved document (paper)
-  against a user query.
+  Simplified annotation interface for validating LLM-generated classification results.
 -->
 <View>
 
-  <!-- Main Header: Displays the ID and Title of the paper being annotated. -->
-  <!-- The variables $paper_id and $title should be present in your data. -->
-  <Header value="Paper ID: $paper_id - $title" />
-  <View style="height: 1px; background: #ccc; margin: 10px 0;" />
+  <!-- Main Header -->
+  <View style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; color: white;">
+    <Header value="Paper ID: $paper_id" style="color: white; font-size: 18px; margin-bottom: 5px;" />
+    <Text name="title_display" value="$title" style="color: rgba(255,255,255,0.9); font-size: 14px; font-style: italic;" />
+  </View>
+  
+  <!-- Metadata Row -->
+  <View style="display: flex; gap: 1.5em; padding: 15px; background: #f8f9fa; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;">
+    <Text name="provider_display" value="🤖 Provider: $provider" style="font-weight: 600; color: #495057; font-size: 14px;" />
+    <Text name="criterion_display" value="📋 $criterion" style="font-weight: 600; color: #495057; font-size: 14px;" />
+    <Text name="satisfied_display" value="✓ LLM Result: $satisfied" style="font-weight: 600; color: #495057; font-size: 14px;" />
+  </View>
 
-  <!-- Main container with a three-section layout -->
-  <View style="display: flex; gap: 0.5em;">
+  <!-- Main container with two-column layout -->
+  <View style="display: flex; gap: 20px;">
 
-    <!-- Left Column: Contains the query and LLM-generated answer -->
-    <View style="flex: 1; display: flex; flex-direction: column; gap: 1em;">
+    <!-- Left Column: Classification Criteria and LLM Answer -->
+    <View style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
 
-      <!-- Section for the original user query -->
+      <!-- Classification Criteria Section -->
       <View>
-        <Header value="Classification Criteria" />
-        <Text name="class_criteria_display" value="$class_criteria" style="background: #f0f8ff; padding: 10px; border-radius: 5px;" />
+        <Header value="📋 Classification Criteria" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
+        <View style="background: #e3f2fd; padding: 18px; border-radius: 8px; border-left: 4px solid #2196f3;">
+          <Text name="class_criteria_display" value="$class_criteria" style="line-height: 1.6; color: #1565c0; font-size: 14px;" />
+        </View>
       </View>
 
-      <!-- Section for the LLM-generated answer -->
+      <!-- LLM Generated Answer Section -->
       <View>
-        <Header value="LLM Generated Answer" />
-        <!-- The 'paper_content' is the object being labeled. -->
-        <Text name="paper_content" value="$paper_text" style="background: #f5fff5; padding: 10px; border-radius: 5px; border: 1px solid #ddd;" />
-      </View>
-
-      <!-- Quality assessment checkboxes for LLM answer -->
-      <View>
-        <Header value="LLM Answer Quality" />
-        <Choices name="llm_quality" toName="paper_content" choice="multiple">
-          <Choice value="accurate" />
-          <Choice value="complete" />
-          <Choice value="relevant" />
-          <Choice value="well_synthesized" />
-          <Choice value="missing_info" />
-          <Choice value="incorrect_info" />
-        </Choices>
+        <Header value="🤖 LLM Generated Answer" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
+        <View style="background: #f1f8f4; padding: 18px; border-radius: 8px; border-left: 4px solid #4caf50;">
+          <Text name="paper_content" value="$paper_text" style="line-height: 1.8; color: #1b5e20; font-size: 14px;" />
+        </View>
       </View>
 
     </View>
 
-    <!-- Middle Column: Retrieved chunks for verification -->
-    <View style="flex: 1.2; display: flex; flex-direction: column; gap: 1em; border-left: 1px solid #ccc; padding-left: 1em;">
+    <!-- Right Column: Supporting Evidence -->
+    <View style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
 
-      <!-- Section showing retrieved chunks count -->
+      <!-- Retrieved Chunks Section -->
       <View>
-        <Header value="Retrieved Chunks ($num_chunks chunks)" />
-        <Text name="chunks_description" value="These are the original document chunks retrieved by the vector search:" style="font-style: italic; color: #666;" />
+        <Header value="📄 Retrieved Chunks ($num_chunks chunks)" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
+        <View style="max-height: 400px; overflow-y: auto; background: #fafafa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
+          <Text name="retrieved_chunks_display" value="$retrieved_chunks" style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #495057; white-space: pre-wrap;" />
+        </View>
       </View>
-
-      <!-- Section for the retrieved chunks -->
-      <View style="max-height: 400px; overflow-y: auto; background: #fafafa; padding: 10px; border-radius: 5px; border: 1px solid #ddd;">
-        <Text name="retrieved_chunks_display" value="$retrieved_chunks" style="font-family: monospace; font-size: 12px; white-space: pre-wrap;" />
-      </View>
-
-      <!-- Chunk relevance assessment -->
+      
+      <!-- Full Context Section -->
       <View>
-        <Header value="Chunk Relevance Assessment" />
-        <TextArea name="chunk_relevance_notes" toName="retrieved_chunks_display"
-                  placeholder="Which chunks are most/least relevant? Any missing information?"
-                  rows="3" />
+        <Header value="📖 Full Context" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
+        <View style="max-height: 300px; overflow-y: auto; background: #fff8f0; padding: 15px; border-radius: 8px; border: 1px solid #ffe0b2;">
+          <Text name="full_context_display" value="$full_context" style="font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.6; color: #6d4c41; white-space: pre-wrap;" />
+        </View>
       </View>
 
     </View>
 
-    <!-- Right Column: Final evaluation and annotation -->
-    <View style="flex: 1; display: flex; flex-direction: column; gap: 1em; border-left: 1px solid #ccc; padding-left: 1em;">
-
-      <!-- Overall relevance rating -->
-      <View>
-        <Header value="Overall Relevance Rating" />
-        <Rating name="relevance_rating" toName="paper_content" maxRating="5" icon="star" size="medium" />
-      </View>
-
-      <!-- Retrieval quality assessment -->
-      <View>
-        <Header value="Retrieval Quality" />
-        <Choices name="retrieval_quality" toName="paper_content" choice="single">
-          <Choice value="excellent" />
-          <Choice value="good" />
-          <Choice value="fair" />
-          <Choice value="poor" />
-        </Choices>
-      </View>
-
-      <!-- Issues identification -->
-      <View>
-        <Header value="Issues Identified" />
-        <Choices name="issues" toName="paper_content" choice="multiple">
-          <Choice value="irrelevant_chunks" />
-          <Choice value="missing_key_info" />
-          <Choice value="poor_chunk_quality" />
-          <Choice value="wrong_context" />
-          <Choice value="no_issues" />
-        </Choices>
-      </View>
-
-       <!-- Section for the annotator's final answer or summary -->
-      <View>
-        <Header value="Final Answer / Summary" />
-        <TextArea name="annotator_answer" toName="paper_content"
-                  placeholder="Write your final answer, corrections, or improvements here..."
-                  rows="6"
-                  maxSubmissions="1" />
-      </View>
-
-      <!-- Confidence level -->
-      <View>
-        <Header value="Annotation Confidence" />
-        <Choices name="confidence" toName="paper_content" choice="single">
-          <Choice value="very_confident" />
-          <Choice value="confident" />
-          <Choice value="somewhat_confident" />
-          <Choice value="not_confident" />
-        </Choices>
-      </View>
-
+  </View>
+  
+  <!-- Evaluation Section (Full Width) -->
+  <View style="margin-top: 30px; padding: 25px; background: #ffffff; border-radius: 8px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+    
+    <Header value="✅ Your Evaluation" style="font-size: 18px; font-weight: 700; color: #2c3e50; margin-bottom: 20px; text-align: center;" />
+    
+    <!-- Evaluation Choice -->
+    <View style="margin-bottom: 20px;">
+      <Choices name="evaluation" toName="paper_content" choice="single" style="display: flex; justify-content: center; gap: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
     </View>
-
+    
+    <!-- Explanation Text Box -->
+    <View>
+      <Header value="💭 Explanation" style="font-size: 15px; font-weight: 600; color: #495057; margin-bottom: 10px;" />
+      <TextArea name="evaluation_explanation" toName="paper_content"
+                placeholder="Please explain your evaluation decision. What evidence supports your choice? What issues did you identify, if any?"
+                rows="6"
+                maxSubmissions="1"
+                style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+    
   </View>
 
 </View>

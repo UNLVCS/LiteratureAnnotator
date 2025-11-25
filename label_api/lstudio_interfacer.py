@@ -42,7 +42,7 @@ class Labeller:
 
     def import_task(self, tasks):
         print("IMPORTED TASKS RESPONSE")
-        print(self.project.import_tasks(tasks))
+        # print(self.project.import_tasks(tasks))
     
     def count_new_tasks(self, project_id):
         # Use requests directly since the SDK Client doesn't have a generic get method
@@ -101,4 +101,4 @@ class Labeller:
         except requests.exceptions.RequestException as e:
             print(f"Failed to create webhook: {str(e)}")
             raise
-        print(f"Webhook created: {response.status_code} - {response.json()}")
+        # print(f"Webhook created: {response.status_code} - {response.json()}")

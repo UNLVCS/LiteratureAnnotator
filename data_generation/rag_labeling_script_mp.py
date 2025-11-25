@@ -9,13 +9,13 @@ semantically relevant chunks from a vector store.
 This version uses global functions and variables for multiprocessing compatibility.
 """
 
+
 import os
 import json
 import sys
-from multiprocessing import Process, Queue, Manager
+from multiprocessing import Process, Queue, Manager, Lock
 from typing import Any, Dict, List
 from pathlib import Path
-import time
 import signal
 from response_standardizer import standardize_llm_response
 
@@ -37,8 +37,10 @@ from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
     claim_next_paper,
     ack_paper,
-    requeue_inflight,
-    paper_queue_len
+    paper_queue_len,
+    push_completed_paper,
+    completed_papers_count,
+    export_completed_papers_to_file
 )
 from minio import Minio
 from io import BytesIO
@@ -48,7 +50,7 @@ client = Minio(
     secret_key="minioadmin",
     secure=False
 )
-bucket_name = "criteria-classified-articles"
+bucket_name = "v4-criteria-classified-articles"
 if not client.bucket_exists(bucket_name):
     print(f"Bucket {bucket_name} does not exist. Creating it...")
     client.make_bucket(bucket_name)
@@ -197,7 +199,7 @@ def get_paper_chunks(paper_id: str) -> List[Dict[str, Any]]:
     )
     
     # Retrieve documents
-    docs = filtered_retriever.get_relevant_documents("")
+    docs = filtered_retriever.invoke("")
     return docs
 
 def return_relevant_chunks(paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
@@ -220,7 +222,8 @@ def return_relevant_chunks(paper_id: str, criteria_query: str, k: int = 5) -> Li
         }
     )
     
-    docs = filtered_retriever.get_relevant_documents(criteria_query)
+    # Use invoke instead of deprecated get_relevant_documents
+    docs = filtered_retriever.invoke(criteria_query)
     return docs
 
 def create_inference_query(full_context: str, criteria_prompt: str) -> str:
@@ -271,13 +274,14 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
     
     # Process each criteria
     for i, criteria_prompt in enumerate(_criteria_prompts[:-1]):  # Exclude final aggregation
+        full_context = ""  # Initialize to prevent UnboundLocalError in except block
         try:
             # Get relevant chunks for this specific criteria using vector similarity
             relevant_chunks = return_relevant_chunks(paper_id, criteria_prompt, k=5)
             # Combine all chunks into a single context
             context_parts = []
-            for i, chunk in enumerate(relevant_chunks):
-                context_parts.append(f"=== Chunk {i+1} ===\n{chunk.page_content}\n")
+            for chunk_idx, chunk in enumerate(relevant_chunks):
+                context_parts.append(f"=== Chunk {chunk_idx+1} ===\n{chunk.page_content}\n")
             
             full_context = "\n".join(context_parts)
 
@@ -335,7 +339,8 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
     return results
 
 def worker_process(provider_name: str, provider_config: BaseLLMProvider, 
-                   result_queue: Queue, stop_event, max_papers: int = None):
+                   result_queue: Queue, stop_event, shared_papers, paper_index):
+                #    result_queue: Queue, stop_event, shared_papers, paper_index, index_lock):
     """
     Worker process that processes papers with a specific provider
     
@@ -344,59 +349,44 @@ def worker_process(provider_name: str, provider_config: BaseLLMProvider,
         provider_config: Configuration for the provider
         result_queue: Queue to put results in
         stop_event: Event to signal when to stop
-        max_papers: Maximum number of papers to process (None for unlimited)
+        shared_papers: List of paper IDs to process (shared across all workers)
+        paper_index: Shared index to track which paper to process next
+        index_lock: Lock for atomic operations on paper_index
     """
     try:
         # Initialize shared resources
         initialize_shared_resources()
         
-        # Create provider instance for this worker
-        # provider = None
-        # if provider_name in _providers:
-        #     provider = _providers[provider_name]
-        # else:
-        #     # Create provider from config
-        #     if "openai" in provider_name.lower():
-        #         provider = OpenAIProvider(**provider_config)
-        #     elif "anthropic" in provider_name.lower():
-        #         provider = AnthropicProvider(**provider_config)
-        #     elif "huggingface" in provider_name.lower():
-        #         provider = HuggingFaceProvider(**provider_config)
-        #     elif "ollama" in provider_name.lower():
-        #         provider = OllamaProvider(**provider_config)
-        
-        # if provider is None:
-        #     raise ValueError(f"Could not create provider for {provider_name}")
-        
         papers_processed = 0
         print(f"Worker for {provider_name} started")
         
         while not stop_event.is_set():
-            if max_papers and papers_processed >= max_papers:
-                print(f"Worker {provider_name} reached max papers limit ({max_papers})")
+            # Get next paper from shared list atomically
+            # with index_lock:
+            #     if paper_index.value >= len(shared_papers):
+            #         print(f"Worker {provider_name}: All papers assigned")
+            #         break
+            #     current_idx = paper_index.value
+            #     paper_index.value += 1
+            if paper_index >= len(shared_papers):
+                print(f"Worker {provider_name}: All papers assigned")
                 break
-                
-            # Claim next paper
-            paper_id = claim_next_paper(block_timeout=5)  # 5 second timeout
-            if not paper_id:
-                print(f"Worker {provider_name}: No more papers in queue")
-                time.sleep(1)  # Brief pause before checking again
-                continue
+            current_idx = paper_index
+            paper_index += 1
             
-            print(f"Worker {provider_name}: Processing paper {paper_id} ({papers_processed + 1})")
+            paper_id = shared_papers[current_idx]
+            print(f"Worker {provider_name}: Processing paper {paper_id} ({current_idx + 1}/{len(shared_papers)})")
             
             try:
                 # Process with this provider
                 result = process_paper_with_provider(paper_id, provider_name)
                 result_queue.put(result)
                 
-                # Acknowledge successful processing
-                ack_paper(paper_id)
                 papers_processed += 1
                 
             except Exception as e:
                 print(f"Worker {provider_name}: Error processing paper {paper_id}: {e}")
-                requeue_inflight(paper_id)
+                # Paper remains in shared list, no need to requeue
                 continue
                 
     except Exception as e:
@@ -413,12 +403,12 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
     Process papers using multiprocessing with one worker per provider
     
     Args:
-        num_papers: Number of papers to process per provider
+        num_papers: Total number of papers to process across ALL providers (not per provider)
         providers: List of provider names to use (defaults to all available)
         provider_configs: Original provider configurations
         
     Returns:
-        List of results for all processed papers
+        List of results for all processed papers (num_papers results, one per paper-provider combination)
     """
     if providers is None:
         providers = list(_providers.keys())
@@ -427,53 +417,46 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
         print("No providers available for processing")
         return []
     
-    print(f"Starting multiprocessed batch processing of {num_papers} papers per provider")
+    print(f"Starting multiprocessed batch processing of {num_papers} papers")
     print(f"Providers: {providers}")
     print(f"Queue length: {paper_queue_len()}")
+    
+    papers_to_process = []
+    for _ in range(num_papers):
+        paper_id = claim_next_paper(block_timeout=0)
+        if paper_id:
+            papers_to_process.append(paper_id)
+        else:
+            break
+    
+    if not papers_to_process:
+        print("No papers available to process")
+        return []
+    
+    print(f"Pre-fetched {len(papers_to_process)} papers: {papers_to_process}")
     
     # Create shared objects for inter-process communication
     manager = Manager()
     result_queue = Queue()
     stop_event = manager.Event()
     
+    # Share the paper list with workers via Manager
+    shared_papers = manager.list(papers_to_process)
+    # paper_index = manager.Value('i', 0)
+    paper_index = 0
+    # paper_index_lock = Lock()
+    
     # Start worker processes
     processes = []
     for provider_name, provider_object in _providers.items():
         process = Process(
             target=worker_process,
-            args=(provider_name, provider_object, result_queue, stop_event, num_papers)
+            args=(provider_name, provider_object, result_queue, stop_event, shared_papers, paper_index)
+            # args=(provider_name, provider_object, result_queue, stop_event, shared_papers, paper_index, paper_index_lock)
         )
         process.start()
         processes.append(process)
         print(f"Started worker process for {provider_name} (PID: {process.pid})")
-
-    # for provider_name in providers:
-    #     if provider_name in _providers:
-    #         # Get the provider config from the original provider_configs
-    #         provider_config = None
-    #         for provider_type, models in provider_configs.items():
-    #             for model_config in models:
-    #                 if model_config.get('model') == provider_name:
-    #                     provider_config = model_config
-    #                     break
-    #             if provider_config:
-    #                 break
-            
-    #         if provider_config is None:
-    #             # Fallback: create a basic config
-    #             provider_config = {
-    #                 'model': provider_name,
-    #                 'api_key': 'dummy',
-    #                 'temperature': 0.1
-    #             }
-            
-    #         process = Process(
-    #             target=worker_process,
-    #             args=(provider_name, provider_config, result_queue, stop_event, num_papers)
-    #         )
-            # process.start()
-            # processes.append(process)
-            # print(f"Started worker process for {provider_name} (PID: {process.pid})")
     
     # Set up signal handler for graceful shutdown
     def signal_handler(signum, frame):
@@ -497,6 +480,8 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
                 # Save intermediate results periodically
                 if len(all_results) % 10 == 0:
                     save_results(all_results, f"intermediate_results_{len(all_results)}.json")
+                    # Also export completed papers periodically
+                    export_completed_papers_to_file("data_generation/completed_papers.txt")
                     
             except Exception:
                 # Check if any processes have finished
@@ -530,12 +515,27 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
                     process.terminate()
                     process.join()
     
+    # Acknowledge all papers after all workers are done
+    print(f"Acknowledging {len(papers_to_process)} papers from Redis...")
+    for paper_id in papers_to_process:
+        ack_paper(paper_id)
+    
+    # Track completed papers (deduplicated)
+    completed_paper_ids = set()
+    for result in all_results:
+        if 'paper_id' in result:
+            completed_paper_ids.add(result['paper_id'])
+
+    for paper_id in completed_paper_ids:
+        push_completed_paper(paper_id)
+    
     print(f"Completed multiprocessed processing. Total results: {len(all_results)}")
+    print(f"Unique papers processed: {len(completed_paper_ids)}")
     return all_results
 
 def save_results(results: List[Dict[str, Any]], filename: str = None):
     """
-    Save results to a JSON file
+    Save results to a JSON file and track completed papers
     
     Args:
         results: List of results to save
@@ -546,10 +546,23 @@ def save_results(results: List[Dict[str, Any]], filename: str = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"rag_labeling_results_{timestamp}.json"
     
+    saved_count = 0
     for result in results:
-        if len(result['errors']) != 0:
-            print(f"Result {result['paper_id']} has errors: {result['errors']}")
+        # Skip results that are error messages from failed workers
+        if 'error' in result and 'paper_id' not in result:
+            print(f"Skipping worker error result: {result.get('error', 'Unknown error')}")
             continue
+        
+        # Skip results with processing errors
+        if 'errors' in result and len(result['errors']) != 0:
+            print(f"Result {result.get('paper_id', 'unknown')} has errors: {result['errors']}")
+            continue
+        
+        # Skip results without required fields
+        if 'paper_id' not in result or 'provider' not in result:
+            print(f"Skipping invalid result: {result}")
+            continue
+            
         json_data = json.dumps(result).encode('utf-8')
         content_length = len(json_data)
         client.put_object(
@@ -558,9 +571,10 @@ def save_results(results: List[Dict[str, Any]], filename: str = None):
             data = BytesIO(json_data),
             length = content_length,
             content_type = "application/json"
-        )   
+        )
+        saved_count += 1
 
-    print(f"Results saved to {bucket_name}")
+    print(f"Results saved to {bucket_name}: {saved_count} papers")
 
 def main():
     """
@@ -578,15 +592,30 @@ def main():
     # Process papers using multiprocessing
     print("Starting RAG-based labeling generation with multiprocessing...")
     results = process_papers_multiprocessed(
-        num_papers=50,  # Adjust as needed
+        num_papers=5,  # Adjust as needed
         provider_configs=provider_configs
     )
     
     # Save final results
     save_results(results, "final_rag_labeling_results.json")
     
-    print(f"\nCompleted processing {len(results)} paper-provider combinations")
+    # Export completed paper IDs to text file
+    print(f"\n{'='*60}")
+    print("Exporting completed paper IDs...")
+    print(f"{'='*60}")
+    
+    completed_count = completed_papers_count()
+    print(f"Total completed papers in queue: {completed_count}")
+    
+    if completed_count > 0:
+        export_path = "data_generation/completed_papers.txt"
+        exported = export_completed_papers_to_file(export_path)
+        print(f"Exported {exported} unique completed paper IDs to {export_path}")
+    
+    print(f"\n{'='*60}")
+    print(f"Completed processing {len(results)} paper-provider combinations")
     print("Results saved to final_rag_labeling_results.json")
+    print(f"{'='*60}")
 
 if __name__ == "__main__":
     main()
