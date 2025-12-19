@@ -237,7 +237,8 @@ def shutdown_annotations() -> None:
 
 def push_completed_paper(paper_id: str) -> None:
     """Add a paper ID to the completed papers queue."""
-    r.rpush(COMPLETED_PAPERS_QUEUE, paper_id)
+    r.sadd(GENERATED_SET, paper_id)
+    # r.rpush(COMPLETED_PAPERS_QUEUE, paper_id)
 
 def get_all_completed_papers() -> list:
     """Retrieve all completed paper IDs from the queue (non-destructive)."""

@@ -12,6 +12,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 # from utilities.vector_db import VectorDb
 import json
+import html
 from typing import Any, Dict, Optional, Tuple   
 from minio import Minio
  
@@ -24,7 +25,7 @@ from utilities.queue_helpers import (
     requeue_inflight,
     push_completed_annotation,
     claim_next_paper_from_set
-)
+) 
 client = Minio(
     "localhost:5000",
     access_key="minioadmin",
@@ -149,13 +150,13 @@ def _unpack_claim(claim: Any) -> Tuple[Optional[str], Optional[str]]:
     if isinstance(claim, (tuple, list)) and len(claim) >= 2:
         return str(claim[0]) if claim[0] is not None else None, str(claim[1]) if claim[1] is not None else None
     # Str shape (the paper_id IS the claim token for ack/requeue)
-    if isinstance(claim, str):  
+    if isinstance(claim, str):   
         return claim, claim
     return None, None
  
 
 def import_next_paper_tasks(project_id: int) -> None:
-    """Pull the next paper from the queue and create Label Studio tasks.
+    """Pull the next paper from the queue and create Label Studio tasks. 
 
     Uses the safer claim/ack pattern when available, with a fallback to simple pop.
     Creates a paper-specific RAG pipeline to ensure responses only come from the relevant paper.
@@ -165,8 +166,8 @@ def import_next_paper_tasks(project_id: int) -> None:
     claim_token: Optional[str] = None
 
     if USE_SAFE_QUEUE:
-        # claim = claim_next_paper()
-        claim = claim_next_paper_from_set()
+        claim = claim_next_paper()
+        # claim = claim_next_paper_from_set()
         # print("Claim: ", claim)
         paper_id, claim_token = _unpack_claim(claim)
     else:
@@ -177,8 +178,6 @@ def import_next_paper_tasks(project_id: int) -> None:
         return
    
     try: 
-        tasks = []  
-
         providers = ['gpt-4o'] 
         # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b'] 
         paper_data = None 
@@ -199,6 +198,9 @@ def import_next_paper_tasks(project_id: int) -> None:
                 if claim_token:
                     ack_paper(claim_token)
                 return             
+            
+            # Collect all criteria into a single array for one task per paper
+            criteria_list = []
             for criteria_res in paper_data.get("criteria_results", []):
                 # Extract the criterion name (e.g., "criterion_1")
                 criterion = criteria_res.get("criterion", "")
@@ -214,24 +216,79 @@ def import_next_paper_tasks(project_id: int) -> None:
                 criterion_data = response_obj.get(criterion, {})
                 reason = criterion_data.get("reason", "NO LLM ANSWER") 
                 satisfied = criterion_data.get("satisfied", "unknown")
-                 
-                tasks.append({ 
-                    "data": {
-                        "paper_id": paper_id,
-                        "provider": provider,
-                        "criterion": criterion,
-                        "satisfied": satisfied,  
-                        "title": paper_data.get("title", "Title N/A"),
-                        "paper_text": reason,
-                        "retrieved_chunks": criteria_res.get("chunks_used", 0),
-                        "class_criteria": criteria_res.get("prompt", "NO CLASS CRITERIA"),
-                        "num_chunks": criteria_res.get("chunks_used", 0),
-                        "full_context": criteria_res.get("full_context", "Full context not available")
-                    }
+                
+                # Build criterion object for the array
+                criteria_list.append({
+                    "criterion": criterion,
+                    "satisfied": satisfied,
+                    "paper_text": reason,
+                    "retrieved_chunks": criteria_res.get("chunks_used", 0),
+                    "class_criteria": criteria_res.get("prompt", "NO CLASS CRITERIA"),
+                    "num_chunks": criteria_res.get("chunks_used", 0),
+                    "full_context": criteria_res.get("full_context", "Full context not available")
                 })
-
-        if len(tasks) > 0:
-            LS.import_tasks(tasks)
+            
+            # Create one task per paper with all criteria bundled together
+            if len(criteria_list) > 0:
+                # Create formatted HTML string for displaying all criteria
+                criteria_html = "<div style='font-family: Arial, sans-serif;'>"
+                criteria_html += "<h2 style='color: #2c3e50; margin-bottom: 20px;'>📋 All Criteria</h2>"
+                
+                # Store criterion data with index for matching with evaluation sections
+                criterion_names = []
+                
+                for idx, criterion_data in enumerate(criteria_list, 1):
+                    criterion = html.escape(str(criterion_data.get("criterion", f"criterion_{idx}")))
+                    criterion_names.append(criterion)
+                    satisfied = html.escape(str(criterion_data.get("satisfied", "unknown")))
+                    paper_text = html.escape(str(criterion_data.get("paper_text", "")))
+                    class_criteria = html.escape(str(criterion_data.get("class_criteria", "")))
+                    num_chunks = criterion_data.get("num_chunks", 0)
+                    full_context = html.escape(str(criterion_data.get("full_context", "")))
+                    
+                    criteria_html += f"""
+                    <div id="criterion_{idx}" style='margin-bottom: 30px; padding: 20px; background: #ffffff; border: 2px solid #e0e0e0; border-radius: 8px;'>
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px; color: white;'>
+                            <h3 style='color: white; margin: 0 0 5px 0;'>📋 {criterion}</h3>
+                            <p style='color: rgba(255,255,255,0.9); margin: 0;'>✓ LLM Result: {satisfied}</p>
+                        </div>
+                        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;'>
+                            <div>
+                                <h4 style='color: #2c3e50; margin-bottom: 10px;'>📋 Classification Criteria</h4>
+                                <div style='background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3;'>
+                                    <p style='color: #1565c0; margin: 0; line-height: 1.6; white-space: pre-wrap;'>{class_criteria}</p>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 style='color: #2c3e50; margin-bottom: 10px;'>🤖 LLM Generated Answer</h4>
+                                <div style='background: #f1f8f4; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50;'>
+                                    <p style='color: #1b5e20; margin: 0; line-height: 1.8; white-space: pre-wrap;'>{paper_text}</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 style='color: #2c3e50; margin-bottom: 10px;'>📄 Retrieved Chunks ({num_chunks} chunks) - Full Content</h4>
+                            <div style='max-height: 500px; overflow-y: auto; overflow-x: auto; background: #fafafa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;'>
+                                <pre style='font-family: "Courier New", monospace; font-size: 12px; margin: 0; white-space: pre-wrap; word-wrap: break-word; line-height: 1.6;'>{full_context}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    """
+                
+                criteria_html += "</div>"
+                 
+                # Structure data for Label Studio - include dummy criterion field for validation
+                task_data = {
+                    "paper_id": paper_id,
+                    "provider": provider,
+                    "title": paper_data.get("title", "Title N/A"),
+                    "criterion": "multiple",  # Dummy field for validation compatibility
+                    "criteria_html": criteria_html,  # Formatted HTML display
+                    "criteria_json": json.dumps(criteria_list),  # Also keep JSON for reference
+                    "criterion_names": json.dumps(criterion_names)  # List of criterion names for matching
+                }
+                task = {"data": task_data}
+                LS.import_tasks([task])
 
         # Acknowledge the claimed item only if we used the claim pattern
         if claim_token:

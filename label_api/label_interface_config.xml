@@ -1,6 +1,9 @@
 <!--
   Label Studio Labeling Configuration
   Simplified annotation interface for validating LLM-generated classification results.
+  Updated to show one task per paper with multiple criteria.
+  Uses HyperText to display pre-formatted HTML with all criteria.
+  Provides individual evaluation sections for each criterion.
 -->
 <View>
 
@@ -13,81 +16,132 @@
   <!-- Metadata Row -->
   <View style="display: flex; gap: 1.5em; padding: 15px; background: #f8f9fa; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #667eea;">
     <Text name="provider_display" value="🤖 Provider: $provider" style="font-weight: 600; color: #495057; font-size: 14px;" />
-    <Text name="criterion_display" value="📋 $criterion" style="font-weight: 600; color: #495057; font-size: 14px;" />
-    <Text name="satisfied_display" value="✓ LLM Result: $satisfied" style="font-weight: 600; color: #495057; font-size: 14px;" />
   </View>
 
-  <!-- Main container with two-column layout -->
-  <View style="display: flex; gap: 20px;">
-
-    <!-- Left Column: Classification Criteria and LLM Answer -->
-    <View style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
-
-      <!-- Classification Criteria Section -->
-      <View>
-        <Header value="📋 Classification Criteria" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
-        <View style="background: #e3f2fd; padding: 18px; border-radius: 8px; border-left: 4px solid #2196f3;">
-          <Text name="class_criteria_display" value="$class_criteria" style="line-height: 1.6; color: #1565c0; font-size: 14px;" />
-        </View>
-      </View>
-
-      <!-- LLM Generated Answer Section -->
-      <View>
-        <Header value="🤖 LLM Generated Answer" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
-        <View style="background: #f1f8f4; padding: 18px; border-radius: 8px; border-left: 4px solid #4caf50;">
-          <Text name="paper_content" value="$paper_text" style="line-height: 1.8; color: #1b5e20; font-size: 14px;" />
-        </View>
-      </View>
-
-    </View>
-
-    <!-- Right Column: Supporting Evidence -->
-    <View style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
-
-      <!-- Retrieved Chunks Section -->
-      <View>
-        <Header value="📄 Retrieved Chunks ($num_chunks chunks)" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
-        <View style="max-height: 400px; overflow-y: auto; background: #fafafa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;">
-          <Text name="retrieved_chunks_display" value="$retrieved_chunks" style="font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #495057; white-space: pre-wrap;" />
-        </View>
-      </View>
-      
-      <!-- Full Context Section -->
-      <View>
-        <Header value="📖 Full Context" style="font-size: 16px; font-weight: 600; color: #2c3e50; margin-bottom: 10px;" />
-        <View style="max-height: 300px; overflow-y: auto; background: #fff8f0; padding: 15px; border-radius: 8px; border: 1px solid #ffe0b2;">
-          <Text name="full_context_display" value="$full_context" style="font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.6; color: #6d4c41; white-space: pre-wrap;" />
-        </View>
-      </View>
-
-    </View>
-
+  <!-- Display all criteria using pre-formatted HTML -->
+  <View style="margin-bottom: 30px; padding: 20px; background: #ffffff; border-radius: 12px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-height: 800px; overflow-y: auto;">
+    <HyperText name="criteria_display" value="$criteria_html" />
   </View>
   
-  <!-- Evaluation Section (Full Width) -->
-  <View style="margin-top: 30px; padding: 25px; background: #ffffff; border-radius: 8px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+  <!-- Individual Evaluation Sections for Each Criterion -->
+  <View style="margin-top: 30px; max-height: 1200px; overflow-y: auto;">
+    <Header value="✅ Your Evaluation for Each Criterion" style="font-size: 18px; font-weight: 700; color: #2c3e50; margin-bottom: 20px; text-align: center;" />
     
-    <Header value="✅ Your Evaluation" style="font-size: 18px; font-weight: 700; color: #2c3e50; margin-bottom: 20px; text-align: center;" />
-    
-    <!-- Evaluation Choice -->
-    <View style="margin-bottom: 20px;">
-      <Choices name="evaluation" toName="paper_content" choice="single" style="display: flex; justify-content: center; gap: 15px;">
+    <!-- Criterion 1 Evaluation -->
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 1" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_1" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
         <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
         <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
         <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
       </Choices>
+      <TextArea name="explanation_criterion_1" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 1. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
     </View>
-    
-    <!-- Explanation Text Box -->
-    <View>
-      <Header value="💭 Explanation" style="font-size: 15px; font-weight: 600; color: #495057; margin-bottom: 10px;" />
-      <TextArea name="evaluation_explanation" toName="paper_content"
-                placeholder="Please explain your evaluation decision. What evidence supports your choice? What issues did you identify, if any?"
-                rows="6"
-                maxSubmissions="1"
-                style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+
+    <!-- Criterion 2 Evaluation -->
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 2" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_2" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_2" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 2. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
     </View>
-    
+
+    <!-- Criterion 3 Evaluation -->
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 3" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_3" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_3" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 3. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <!-- Criterion 4 Evaluation -->
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 4" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_4" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_4" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 4. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <!-- Criterion 5 Evaluation -->
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 5" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_5" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_5" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 5. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <!-- Additional Criteria (6-10) -->
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 6" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_6" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_6" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 6. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 7" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_7" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_7" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 7. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 8" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_8" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_8" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 8. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 9" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_9" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_9" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 9. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+    <View style="margin-bottom: 25px; padding: 20px; background: #f8f9fa; border-radius: 8px; border: 2px solid #dee2e6; max-height: 300px; overflow-y: auto;">
+      <Header value="📋 Criterion 10" style="font-size: 16px; font-weight: 700; color: #2c3e50; margin-bottom: 15px;" />
+      <Choices name="evaluation_criterion_10" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 15px; margin-bottom: 15px;">
+        <Choice value="CORRECT" style="background:rgb(153, 208, 155); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="INCORRECT" style="background:rgb(224, 115, 107); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 12px 30px; border-radius: 6px; font-weight: 600; font-size: 15px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_10" toName="criteria_display" placeholder="Please explain your evaluation for Criterion 10. What evidence supports your choice? What issues did you identify, if any?" rows="4" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+    </View>
+
+  </View>
+
+  <!-- Template Section for Additional Notes -->
+  <View style="margin-top: 30px; padding: 25px; background: #ffffff; border-radius: 8px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+    <Header value="📝 Additional Notes (Optional)" style="font-size: 16px; font-weight: 600; color: #495057; margin-bottom: 10px;" />
+    <TextArea name="additional_notes" toName="criteria_display"
+              placeholder="Any additional notes or observations about the paper or criteria evaluation..."
+              rows="4"
+              style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
   </View>
 
 </View>

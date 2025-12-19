@@ -75,7 +75,8 @@ def initialize_shared_resources():
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(), 
             embedding=_embedder, 
-            namespace="article_upload_test_2"
+            namespace="V3_raw_pubmed_articles"
+            # namespace="article_upload_test_2"
         )
         _prompt = hub.pull("rlm/rag-prompt")
         _criteria_prompts = [
@@ -266,6 +267,7 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
     results = {
         "paper_id": paper_id,
         "provider": provider_name,
+        "title": None,  # Will be populated from chunk metadata
         "criteria_results": [],
         "final_classification": None,
         "chunks_processed": 0,
@@ -278,6 +280,12 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
         try:
             # Get relevant chunks for this specific criteria using vector similarity
             relevant_chunks = return_relevant_chunks(paper_id, criteria_prompt, k=5)
+            
+            # Extract title from the first chunk's metadata if not already set
+            if relevant_chunks and results["title"] is None:
+                if hasattr(relevant_chunks[0], 'metadata') and 'title' in relevant_chunks[0].metadata:
+                    results["title"] = relevant_chunks[0].metadata['title']
+            
             # Combine all chunks into a single context
             context_parts = []
             for chunk_idx, chunk in enumerate(relevant_chunks):

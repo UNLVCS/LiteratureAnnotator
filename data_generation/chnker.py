@@ -36,11 +36,14 @@ class Chunker():
         # self.article = list(article_dict.values())
         # self.article_id = article_dict.keys[0]
         self.article_id, self.article = next(iter(article_dict.items()))
+        self.article_title = self.article['Title']
         self.article = list(self.article.values())
+        
         self.split_document()
 
     def get_chunked_article(self):
         chunked_doc = {"id": self.article_id,
+                       "title": self.article_title,
                        "chunks": self.chunked_instances
                     }
         return chunked_doc
