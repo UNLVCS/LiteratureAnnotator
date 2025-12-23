@@ -114,7 +114,7 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
 
     # Handle the completed task in the background
     # bg.add_task(handle_completed_task, task_info, annotation)e
-
+ 
     # If there are no new tasks left in the project, pull the next paper from the queue
     new_count = LS.count_new_tasks(proj_id)
     if new_count == 0:
