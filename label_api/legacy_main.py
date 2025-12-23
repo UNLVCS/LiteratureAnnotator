@@ -245,31 +245,31 @@ def import_next_paper_tasks(project_id: int) -> None:
                     class_criteria = html.escape(str(criterion_data.get("class_criteria", "")))
                     num_chunks = criterion_data.get("num_chunks", 0)
                     full_context = html.escape(str(criterion_data.get("full_context", "")))
-                    
+                     
                     criteria_html += f"""
-                    <div id="criterion_{idx}" style='margin-bottom: 30px; padding: 20px; background: #ffffff; border: 2px solid #e0e0e0; border-radius: 8px;'>
-                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px; border-radius: 8px; margin-bottom: 15px; color: white;'>
-                            <h3 style='color: white; margin: 0 0 5px 0;'>📋 {criterion}</h3>
-                            <p style='color: rgba(255,255,255,0.9); margin: 0;'>✓ LLM Result: {satisfied}</p>
+                    <div id="criterion_{idx}" style='margin-bottom: 25px; padding: 18px; background: #ffffff; border: 2px solid #e0e0e0; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06);'>
+                        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 14px 18px; border-radius: 8px; margin-bottom: 18px; color: white;'>
+                            <h3 style='color: white; margin: 0 0 6px 0; font-size: 16px; font-weight: 700;'>📋 {criterion}</h3>
+                            <p style='color: rgba(255,255,255,0.95); margin: 0; font-size: 13px; font-weight: 500;'>✓ LLM Result: <strong>{satisfied}</strong></p>
                         </div>
-                        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 15px;'>
+                        <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px;'>
                             <div>
-                                <h4 style='color: #2c3e50; margin-bottom: 10px;'>📋 Classification Criteria</h4>
-                                <div style='background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196f3;'>
-                                    <p style='color: #1565c0; margin: 0; line-height: 1.6; white-space: pre-wrap;'>{class_criteria}</p>
+                                <h4 style='color: #2c3e50; margin: 0 0 8px 0; font-size: 14px; font-weight: 600;'>📋 Classification Criteria</h4>
+                                <div style='background: #e3f2fd; padding: 14px; border-radius: 8px; border-left: 4px solid #2196f3;'>
+                                    <p style='color: #1565c0; margin: 0; line-height: 1.7; white-space: pre-wrap; font-size: 13px;'>{class_criteria}</p>
                                 </div>
                             </div>
                             <div>
-                                <h4 style='color: #2c3e50; margin-bottom: 10px;'>🤖 LLM Generated Answer</h4>
-                                <div style='background: #f1f8f4; padding: 15px; border-radius: 8px; border-left: 4px solid #4caf50;'>
-                                    <p style='color: #1b5e20; margin: 0; line-height: 1.8; white-space: pre-wrap;'>{paper_text}</p>
+                                <h4 style='color: #2c3e50; margin: 0 0 8px 0; font-size: 14px; font-weight: 600;'>🤖 LLM Generated Answer</h4>
+                                <div style='background: #f1f8f4; padding: 14px; border-radius: 8px; border-left: 4px solid #4caf50;'>
+                                    <p style='color: #1b5e20; margin: 0; line-height: 1.7; white-space: pre-wrap; font-size: 13px;'>{paper_text}</p>
                                 </div>
                             </div>
                         </div>
                         <div>
-                            <h4 style='color: #2c3e50; margin-bottom: 10px;'>📄 Retrieved Chunks ({num_chunks} chunks) - Full Content</h4>
-                            <div style='max-height: 500px; overflow-y: auto; overflow-x: auto; background: #fafafa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6;'>
-                                <pre style='font-family: "Courier New", monospace; font-size: 12px; margin: 0; white-space: pre-wrap; word-wrap: break-word; line-height: 1.6;'>{full_context}</pre>
+                            <h4 style='color: #2c3e50; margin: 0 0 10px 0; font-size: 14px; font-weight: 600; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px;'>📄 Retrieved Chunks ({num_chunks} chunks) - Full Content</h4>
+                            <div style='max-height: 500px; overflow-y: auto; background: #fafafa; padding: 18px; border-radius: 8px; border: 1px solid #dee2e6;'>
+                                <div style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; font-size: 13.5px; color: #2c3e50; line-height: 1.8; white-space: pre-wrap; word-wrap: break-word;'>{full_context}</div>
                             </div>
                         </div>
                     </div>
