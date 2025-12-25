@@ -1,0 +1,34 @@
+# FastAPI and Server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
+python-multipart>=0.0.6
+
+# Pydantic
+pydantic>=2.5.0
+
+# Label Studio SDK
+label-studio-sdk>=0.0.34
+
+# Redis
+redis>=5.0.0
+
+# MinIO client
+minio>=7.2.0
+
+# LangChain (if using RAG features)
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-openai>=0.1.0
+langchain-pinecone>=0.1.0
+
+# OpenAI (for embeddings)
+openai>=1.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# HTTP client
+requests>=2.31.0
+httpx>=0.25.0
+

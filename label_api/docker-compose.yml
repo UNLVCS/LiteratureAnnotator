@@ -1,0 +1,202 @@
+version: "3.8"
+
+services:
+  # ===========================================
+  # PostgreSQL - Database for Label Studio
+  # ===========================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: annotation-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=labelstudio
+      - POSTGRES_PASSWORD=labelstudio
+      - POSTGRES_DB=labelstudio
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U labelstudio -d labelstudio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - annotation-network
+
+  # ===========================================
+  # Redis - Message Queue & Caching
+  # ===========================================
+  redis:
+    image: redis:7-alpine
+    container_name: annotation-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - annotation-network
+
+  # ===========================================
+  # Label Studio - Annotation Platform
+  # ===========================================
+  label-studio:
+    image: heartexlabs/label-studio:latest
+    container_name: annotation-label-studio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # PostgreSQL database connection
+      - DJANGO_DB=default
+      - POSTGRE_HOST=postgres
+      - POSTGRE_PORT=5432
+      - POSTGRE_NAME=labelstudio
+      - POSTGRE_USER=labelstudio
+      - POSTGRE_PASSWORD=labelstudio
+      # File serving
+      - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
+      - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files
+      # Host settings
+      - LABEL_STUDIO_HOST=${LABEL_STUDIO_HOST:-http://localhost:8080}
+      # Webhook settings
+      - LABEL_STUDIO_WEBHOOK_ENABLED=true
+      # Disable signup for production (uncomment if needed)
+      # - LABEL_STUDIO_DISABLE_SIGNUP_WITHOUT_LINK=true
+    volumes:
+      - label_studio_data:/label-studio/data
+      - label_studio_files:/label-studio/files
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks:
+      - annotation-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ===========================================
+  # FastAPI Backend - Webhook Handler & Queue
+  # ===========================================
+  fastapi-backend:
+    build:
+      context: ..
+      dockerfile: label_api/Dockerfile
+    container_name: annotation-fastapi
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    # Hot reload for development
+    command: >
+      uvicorn label_api.legacy_main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/label_api
+      --reload-dir /app/utilities
+    environment:
+      # Redis connection
+      - REDIS_URL=redis://redis:6379/0
+      # Label Studio connection
+      - LABEL_STUDIO_URL=http://label-studio:8080
+      - LABEL_STUDIO_API_KEY=${LABEL_STUDIO_API_KEY}
+      # MinIO connection (update host for Docker network or external)
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      # Queue settings
+      - PAPER_QUEUE=q:papers:v1
+      - PAPER_PROCESSING=q:papers:processing:v1
+      - PAPER_DEDUP_SET=s:papers:enqueued:v1
+      - ANN_QUEUE=q:annotations:completed:v1
+      # Annotation persistence
+      - ANN_PERSIST_PATH=/app/data_labeling/annotations.jsonl
+      - ANN_FLUSH_THRESHOLD=100
+      # OpenAI (if using RAG features)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Pinecone (if using vector store)
+      - PINECONE_API_KEY=${PINECONE_API_KEY:-}
+      # Webhook host (for Label Studio to call back)
+      - WEBHOOK_HOST=http://host.docker.internal:8000
+    volumes:
+      # Persist annotations and data
+      - annotation_data:/app/data_labeling
+      # Mount source for development (optional - remove in production)
+      - ./:/app/label_api:ro
+      - ../utilities:/app/utilities:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - annotation-network
+    depends_on:
+      redis:
+        condition: service_healthy
+      label-studio:
+        condition: service_healthy
+
+  # ===========================================
+  # MinIO - Object Storage (Optional)
+  # ===========================================
+  minio:
+    image: minio/minio:latest
+    container_name: annotation-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - ~/minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - annotation-network
+
+# ===========================================
+# Volumes
+# ===========================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  label_studio_data:
+    driver: local
+  label_studio_files:
+    driver: local
+  annotation_data:
+    driver: local
+  minio_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  annotation-network:
+    driver: bridge
+

@@ -6,8 +6,8 @@ from label_api.lstudio_interfacer_sdk import LabellerSDK
 # from label_api.lstudio_interfacer import Labeller
 from langchain_openai import ChatOpenAI 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.chains import RetrievalQA 
-from langchain import hub
+# from langchain.chains import RetrievalQA 
+# from langchain import hub
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 # from utilities.vector_db import VectorDb
@@ -15,6 +15,7 @@ import json
 import html
 from typing import Any, Dict, Optional, Tuple   
 from minio import Minio
+import os
  
 # Queue helpers (use these instead of any local Redis calls)
 from utilities.queue_helpers import (
@@ -23,16 +24,19 @@ from utilities.queue_helpers import (
     claim_next_paper,         # safer pattern (claim + ack/requeue)
     ack_paper,
     requeue_inflight,
-    push_completed_annotation,
     claim_next_paper_from_set
-) 
-client = Minio(
-    "localhost:5000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
-    secure=False
 )
-bucket_name = "v4-criteria-classified-articles"
+from datetime import datetime
+from io import BytesIO 
+
+# MinIO client configuration (uses env vars for Docker compatibility)
+client = Minio(
+    os.getenv("MINIO_ENDPOINT", "localhost:9000"),
+    access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+    secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+    secure=os.getenv("MINIO_SECURE", "false").lower() == "true"
+)
+bucket_name = os.getenv("MINIO_BUCKET", "v4-criteria-classified-articles")
 
 # --------------------
 # RAG / Model setup
@@ -62,11 +66,18 @@ bucket_name = "v4-criteria-classified-articles"
 LS = LabellerSDK()
 app = FastAPI()
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration."""
+    return {"status": "healthy"}
+
 @app.on_event("startup")
 async def startup_event():
+    # Use Docker service name or fallback to localhost for local dev
+    webhook_host = os.getenv("WEBHOOK_HOST", "http://localhost:8000")
     LS.create_webhook(
-        endpoint="http://localhost:8000/webhook"
-    )
+        endpoint=f"{webhook_host}/webhook"
+    ) 
     # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
     # This ensures tasks are loaded even if the project already exists
     import_next_paper_tasks(LS.project_id)
@@ -97,7 +108,7 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
 
     if  action == "PROJECT_CREATED": 
         # If a new project is created, we can start importing tasks
-        proj_id = payload["project"]["id"]   
+        proj_id = payload["project"]["id"]  
         bg.add_task(import_next_paper_tasks, proj_id)
         return {"status": "ok", "event": "project_created"}
 
@@ -106,12 +117,17 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
     proj_id = payload["project"]["id"]
 
     # if  action == "TASK_CREATED":
-    if  action == "ANNOTATION_COMPLETED":
-        task_info = payload["tasks"]
+    if  action == "ANNOTATION_CREATED":
+        task_info = payload["task"]
         annotation = payload["annotation"]
         bg.add_task(handle_completed_task, task_info, annotation)
         return {"status": "ok", "event": "annotation_completed"}
 
+    if action == "ANNOTATION_UPDATED":
+        task_info = payload["task"]
+        annotation = payload["annotation"]
+        bg.add_task(handle_completed_task, task_info, annotation)
+        return {"status": "ok", "event": "annotation_updated"}
     # Handle the completed task in the background
     # bg.add_task(handle_completed_task, task_info, annotation)e
  
@@ -179,7 +195,7 @@ def import_next_paper_tasks(project_id: int) -> None:
    
     try: 
         providers = ['gpt-4o'] 
-        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b'] 
+        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b']  
         paper_data = None 
         for provider in providers:
             try:
@@ -305,12 +321,49 @@ def import_next_paper_tasks(project_id: int) -> None:
 # Completed task handling
 # --------------------
 
+# MinIO bucket for completed annotations
+ANNOTATIONS_BUCKET = os.getenv("ANNOTATIONS_BUCKET", "completed-annotations")
+
+def _ensure_annotations_bucket():
+    """Create the annotations bucket if it doesn't exist."""
+    try:
+        if not client.bucket_exists(ANNOTATIONS_BUCKET):
+            client.make_bucket(ANNOTATIONS_BUCKET)
+            print(f"Created bucket: {ANNOTATIONS_BUCKET}")
+    except Exception as e:
+        print(f"Error checking/creating bucket {ANNOTATIONS_BUCKET}: {e}")
+
 def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
+    """Save completed annotation to MinIO bucket."""
     record: Dict[str, Any] = {}
 
     for prefix, d in (("task", task), ("ann", annotation)):
         for k, v in d.items():
-            record[f"data_{k}"] = v
+            record[f"{prefix}_{k}"] = v
 
-    # Persist the completed annotation in the queue-backed sink
-    push_completed_annotation(json.dumps(record))
+    # Extract identifiers for the object name
+    paper_id = task.get("data", {}).get("paper_id", "unknown")
+    task_id = task.get("id", "unknown")
+    annotation_id = annotation.get("id", "unknown")
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    
+    # Create object name: paper_id/task_id_annotation_id_timestamp.json
+    object_name = f"{paper_id}/{task_id}_{annotation_id}_{timestamp}.json"
+    
+    # Serialize to JSON
+    json_data = json.dumps(record, indent=2, default=str)
+    data_bytes = json_data.encode("utf-8")
+    
+    try:
+        _ensure_annotations_bucket()
+        client.put_object(
+            bucket_name=ANNOTATIONS_BUCKET,
+            object_name=object_name,
+            data=BytesIO(data_bytes),
+            length=len(data_bytes),
+            content_type="application/json"
+        )
+        print(f"Saved annotation to MinIO: {ANNOTATIONS_BUCKET}/{object_name}")
+    except Exception as e:
+        print(f"Error saving annotation to MinIO: {e}")
+        raise

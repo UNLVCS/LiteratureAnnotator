@@ -31,12 +31,26 @@ class LabellerSDK:
         with open(default_config_path, "r") as config_file:
             interface_config = config_file.read()
 
-        project = self.client.projects.create(
-            title="RAG Annotation Project",
-            description="Labeling sections relevant to questions using a RAG pipeline",
-            label_config=interface_config,
-        )
-        self.project_id: int = project.id
+        # Try to find existing project first to avoid creating duplicates
+        project_title = "RAG Annotation Project"
+        existing_projects = list(self.client.projects.list())
+        matching_project = None
+        for proj in existing_projects:
+            if proj.title == project_title:
+                matching_project = proj
+                break
+        
+        if matching_project:
+            print(f"Reusing existing project: {matching_project.id}")
+            self.project_id = matching_project.id
+        else:
+            print("Creating new project")
+            project = self.client.projects.create(
+                title=project_title,
+                description="Labeling sections relevant to questions using a RAG pipeline",
+                label_config=interface_config,
+            )
+            self.project_id = project.id
 
     # -----------------------------
     # Task creation & import
@@ -135,11 +149,19 @@ class LabellerSDK:
         """Create a webhook on the current project via SDK (validates URL).
 
         By default, uses project-level actions only (no organization-only events).
+        Skips creation if a webhook with the same URL already exists.
         """
         if not endpoint.startswith(("http://", "https://")):
             raise ValueError("Endpoint URL must start with http:// or https://")
         if not endpoint.endswith("/webhook"):
             raise ValueError("Endpoint URL must end with /webhook for FastAPI handler")
+
+        # Check if webhook already exists for this project
+        existing_webhooks = list(self.client.webhooks.list(project=self.project_id))
+        for wh in existing_webhooks:
+            if wh.url == endpoint:
+                print(f"Webhook already exists: {endpoint}")
+                return wh
 
         # Default to project-level webhook actions only
         if actions is None:
@@ -151,7 +173,7 @@ class LabellerSDK:
                 "TASKS_CREATED",
                 "TASKS_DELETED",
             ]
-
+        print("Creating webhook with actions: ", actions)
         webhook = self.client.webhooks.create(
             url=endpoint,
             project=self.project_id,
