@@ -14,7 +14,7 @@ from langchain_pinecone import PineconeVectorStore
 import json
 import html
 from typing import Any, Dict, Optional, Tuple   
-from minio import Minio
+from apscheduler.schedulers.background import BackgroundScheduler
 import os
  
 # Queue helpers (use these instead of any local Redis calls)
@@ -28,7 +28,7 @@ from utilities.queue_helpers import (
 )
 from datetime import datetime
 from io import BytesIO 
-
+from minio import Minio
 # MinIO client configuration (uses env vars for Docker compatibility)
 client = Minio(
     os.getenv("MINIO_ENDPOINT", "localhost:9000"),
@@ -38,6 +38,8 @@ client = Minio(
 )
 bucket_name = os.getenv("MINIO_BUCKET", "v4-criteria-classified-articles")
 
+# Scheduler for background tasks
+scheduler = BackgroundScheduler()
 # --------------------
 # RAG / Model setup 
 # --------------------
@@ -81,7 +83,12 @@ async def startup_event():
     # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
     # This ensures tasks are loaded even if the project already exists
     import_next_paper_tasks(LS.project_id)
+
+    scheduler.add_job(periodic_paper_check, 'interval', minutes=3, id='periodic_paper_check')
+    scheduler.start()
+    print("[Startup] Scheduler started")
     return {"status": "ok"}
+
  
 # --------------------
 # Schemas
@@ -170,6 +177,16 @@ def _unpack_claim(claim: Any) -> Tuple[Optional[str], Optional[str]]:
         return claim, claim
     return None, None
  
+def periodic_paper_check():
+    try:
+        new_count = LS.count_new_tasks(LS.project_id)
+        print(f"[Periodic Paper Check] New tasks: {new_count}")
+
+        if new_count < 5:
+            print("[Periodic Paper Check] No new tasks found, importing next paper")
+            import_next_paper_tasks(LS.project_id)
+    except Exception as e:
+        print(f"[Periodic Paper Check] Error: {e}")
 
 def import_next_paper_tasks(project_id: int) -> None:
     """Pull the next paper from the queue and create Label Studio tasks. 
