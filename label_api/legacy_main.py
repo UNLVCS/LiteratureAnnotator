@@ -39,7 +39,7 @@ client = Minio(
 bucket_name = os.getenv("MINIO_BUCKET", "v4-criteria-classified-articles")
 
 # --------------------
-# RAG / Model setup
+# RAG / Model setup 
 # --------------------
 
 # vdb = VectorDb()
