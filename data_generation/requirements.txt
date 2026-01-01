@@ -1,14 +1,13 @@
-# Core LangChain dependencies
+# ============================================
+# CORE REQUIREMENTS (always needed)
+# ============================================
+# LangChain - only what's directly imported
 langchain>=0.1.0
 langchain-core>=0.1.0
-
-# LangChain provider integrations
 langchain-openai>=0.1.0
 langchain-pinecone>=0.1.0
-langchain-anthropic>=0.1.0
-langchain-huggingface>=0.1.0
 
-# OpenAI (for embeddings and API)
+# OpenAI (for embeddings)
 openai>=1.0.0
 
 # Pinecone (vector database)
@@ -26,8 +25,16 @@ typing-extensions>=4.0.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 
-# Optional: For HuggingFace local model support
-# Uncomment if using HuggingFaceProvider with local models
+# ============================================
+# OPTIONAL: Only install if using these providers
+# ============================================
+# For AnthropicProvider (only if using Claude):
+# langchain-anthropic>=0.1.0
+
+# For HuggingFaceProvider API mode (only if using HF API):
+# langchain-huggingface>=0.1.0
+
+# For HuggingFaceProvider LOCAL models (VERY HEAVY - 5+ GB):
 # torch>=1.9.0
 # transformers>=4.20.0
 # accelerate>=0.20.0
