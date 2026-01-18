@@ -45,12 +45,12 @@ from utilities.queue_helpers import (
 from minio import Minio
 from io import BytesIO
 client = Minio(
-    "localhost:5000",
+    "localhost:9000",
     access_key="minioadmin",
     secret_key="minioadmin",
     secure=False
 )
-bucket_name = "v4-criteria-classified-articles"
+bucket_name = "v5-criteria-classified-articles"
 if not client.bucket_exists(bucket_name):
     print(f"Bucket {bucket_name} does not exist. Creating it...")
     client.make_bucket(bucket_name)
