@@ -1,6 +1,9 @@
 import os, json, redis
 import atexit, signal, threading
 from typing import Optional
+from dotenv import load_dotenv, find_dotenv
+
+load_dotenv(find_dotenv(), override=True)
 
 REDIS_URL       = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 PAPER_QUEUE     = os.getenv("PAPER_QUEUE", "q:papers:v1")
@@ -21,6 +24,7 @@ ANN_INSTALL_SIGNAL_HANDLERS = os.getenv("ANN_INSTALL_SIGNAL_HANDLERS", "1") not 
 _flush_lock = threading.Lock()
 _has_flushed_on_shutdown = False
 
+print(REDIS_URL)
 r = redis.Redis.from_url(
     REDIS_URL,
     decode_responses=True,

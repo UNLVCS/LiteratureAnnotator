@@ -8,3 +8,6 @@ ignore_me
 llm_params*.json
 data_labeling
 .vscode
+*.err
+*.out
+vllm-serve.sh
