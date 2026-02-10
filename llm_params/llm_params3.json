@@ -4,7 +4,7 @@
             "api_key": "",
             "model": "gpt-4o",
             "temperature": 0.1,
-            "skip": false
+            "skip": true
         }
     ],
     "anthropic": [
@@ -23,6 +23,16 @@
             "skip": true
         }
     ],
+    "vllm": [
+        {
+            "api_key": "EMPTY",
+            "model": "openai/gpt-oss-120b",
+            "base_url": "http://falcon9:8080/v1",
+            "temperature": 0.1,
+            "skip": false
+
+        }
+    ],
     "ollama": [
         {
             "api_key": "dummy",
@@ -30,7 +40,7 @@
             "base_url": "http://localhost:11434",
             "temperature": 0.1,
             "timeout": 120000,
-            "skip": false,
+            "skip": true,
             "think": false,
             "options": {
             }
@@ -41,7 +51,7 @@
             "base_url": "http://falcon9.cs.unlv.edu:11434",
             "temperature": 0.1,
             "timeout": 120000,
-            "skip": false,
+            "skip": true,
             "think": false,
             "options": {
             }
@@ -52,7 +62,7 @@
             "base_url": "http://localhost:11435",
             "temperature": 0.1,
             "timeout": 120000,
-            "skip": false,
+            "skip": true,
             "think": false,
             "options": {
             }

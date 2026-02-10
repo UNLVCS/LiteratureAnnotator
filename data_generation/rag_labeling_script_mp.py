@@ -17,6 +17,11 @@ from multiprocessing import Process, Queue, Manager, Lock
 from typing import Any, Dict, List
 from pathlib import Path
 import signal
+from dotenv import load_dotenv, find_dotenv
+
+# Load environment variables
+
+
 from response_standardizer import standardize_llm_response
 
 # Add the parent directory to the path so we can import llm_providers
@@ -28,6 +33,7 @@ from llm_providers.openai_provider import OpenAIProvider
 from llm_providers.anthropic_provider import AnthropicProvider
 from llm_providers.huggingface_provider import HuggingFaceProvider
 from llm_providers.ollama_provider import OllamaProvider
+from llm_providers.vllm_provider import VLLMProvider
 
 # Import the existing components
 from langchain_openai import OpenAIEmbeddings
@@ -44,13 +50,17 @@ from utilities.queue_helpers import (
 )
 from minio import Minio
 from io import BytesIO
+
+
+load_dotenv(find_dotenv(), override=True)
+
 client = Minio(
-    "localhost:9000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
+    os.getenv("MINIO_URL"),
+    access_key=os.getenv("MINIO_ACCESS_KEY"),
+    secret_key=os.getenv("MINIO_SECRET_KEY"),
     secure=False
 )
-bucket_name = "v5-criteria-classified-articles"
+bucket_name = os.getenv("MINIO_BUCKET_NAME")
 if not client.bucket_exists(bucket_name):
     print(f"Bucket {bucket_name} does not exist. Creating it...")
     client.make_bucket(bucket_name)
@@ -169,6 +179,9 @@ def setup_providers(provider_configs: Dict[str, Dict[str, Any]]):
             if "huggingface" == provider:
                 hf_params = model
                 _providers[model['model']] = HuggingFaceProvider(**hf_params)
+            if "vllm" == provider:
+                vllm_params = model
+                _providers[model['model']] = VLLMProvider(**vllm_params)
             if "ollama" == provider:
                 ollama_params = model
                 try:
@@ -597,10 +610,18 @@ def main():
     initialize_shared_resources()
     setup_providers(provider_configs)
     
+    # Get current queue length to determine how many papers to process
+    queue_size = paper_queue_len()
+    print(f"Current queue size: {queue_size}")
+    
+    if queue_size == 0:
+        print("Queue is empty. No papers to process.")
+        return
+
     # Process papers using multiprocessing
     print("Starting RAG-based labeling generation with multiprocessing...")
     results = process_papers_multiprocessed(
-        num_papers=5,  # Adjust as needed
+        num_papers=queue_size,
         provider_configs=provider_configs
     )
     

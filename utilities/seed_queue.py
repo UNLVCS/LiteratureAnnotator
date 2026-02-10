@@ -20,8 +20,8 @@ def seed_queue_from_file(file_path):
                     print(f"Duplicate or failed to enqueue: {paper_id}")
 
 # Path to your text file containing paper IDs
-file_path = 'test_papers_mini.txt'  
-# file_path = 'test_papers.txt'
+# file_path = 'test_papers_mini.txt'  
+file_path = 'test_papers.txt'
 #file_path = 'labeled_paper_ids.txt'
 # file_path = 'completed_papers.txt'
 seed_queue_from_file(file_path)

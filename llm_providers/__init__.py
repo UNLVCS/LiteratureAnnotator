@@ -10,13 +10,15 @@ from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
 from .huggingface_provider import HuggingFaceProvider
 from .ollama_provider import OllamaProvider
+from .vllm_provider import VLLMProvider
 
 __all__ = [
     'BaseLLMProvider',
-    'Query', 
+    'Query',
     'LLMResponse',
     'OpenAIProvider',
     'AnthropicProvider',
-    # 'HuggingFaceProvider',
-    'OllamaProvider'
+    'HuggingFaceProvider',
+    'OllamaProvider',
+    'VLLMProvider'
 ]
