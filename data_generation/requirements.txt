@@ -1,0 +1,41 @@
+# ============================================
+# CORE REQUIREMENTS (always needed)
+# ============================================
+# LangChain - only what's directly imported
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-openai>=0.1.0
+langchain-pinecone>=0.1.0
+
+# OpenAI (for embeddings)
+openai>=1.0.0
+
+# Pinecone (vector database)
+pinecone>=3.0.0
+
+# MinIO client (object storage)
+minio>=7.2.0
+
+# Redis (queue management)
+redis>=5.0.0
+
+# Core dependencies
+pydantic>=2.0.0
+typing-extensions>=4.0.0
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# ============================================
+# OPTIONAL: Only install if using these providers
+# ============================================
+# For AnthropicProvider (only if using Claude):
+# langchain-anthropic>=0.1.0
+
+# For HuggingFaceProvider API mode (only if using HF API):
+# langchain-huggingface>=0.1.0
+
+# For HuggingFaceProvider LOCAL models (VERY HEAVY - 5+ GB):
+# torch>=1.9.0
+# transformers>=4.20.0
+# accelerate>=0.20.0
+
