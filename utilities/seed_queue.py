@@ -6,6 +6,7 @@ from queue_helpers import enqueue_paper_id
 
 # Set up Redis connection
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+print(f"Redis URL: {REDIS_URL}")
 r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
 def seed_queue_from_file(file_path):

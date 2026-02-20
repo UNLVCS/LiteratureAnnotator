@@ -49,6 +49,8 @@ services:
     image: heartexlabs/label-studio:latest
     container_name: annotation-label-studio
     restart: unless-stopped
+    env_file:
+      - ../.env
     ports:
       - "8080:8080"
     extra_hosts:
@@ -64,8 +66,6 @@ services:
       # File serving
       - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
       - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files
-      # Host settings
-      - LABEL_STUDIO_HOST=${LABEL_STUDIO_HOST:-http://localhost:8080}
       # Webhook settings
       - LABEL_STUDIO_WEBHOOK_ENABLED=true
       # Disable signup for production (uncomment if needed)
@@ -96,6 +96,8 @@ services:
       dockerfile: label_api/Dockerfile
     container_name: annotation-fastapi
     restart: unless-stopped
+    env_file:
+      - ../.env
     ports:
       - "8000:8000"
     # Hot reload for development
@@ -109,13 +111,10 @@ services:
     environment:
       # Redis connection
       - REDIS_URL=redis://redis:6379/0
-      # Label Studio connection
+      # Label Studio connection (URL overridden for Docker network)
       - LABEL_STUDIO_URL=http://label-studio:8080
-      - LABEL_STUDIO_API_KEY=${LABEL_STUDIO_API_KEY}
-      # MinIO connection (update host for Docker network or external)
+      # MinIO connection
       - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
       # Queue settings
       - PAPER_QUEUE=q:papers:v1
       - PAPER_PROCESSING=q:papers:processing:v1
