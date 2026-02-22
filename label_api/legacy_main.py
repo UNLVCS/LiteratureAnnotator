@@ -36,7 +36,7 @@ client = Minio(
     secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
     secure=os.getenv("MINIO_SECURE", "false").lower() == "true"
 )
-bucket_name = os.getenv("MINIO_BUCKET", "v4-criteria-classified-articles")
+bucket_name = os.getenv("MINIO_BUCKET_NAME", "v4-criteria-classified-articles")
 
 # Scheduler for background tasks
 scheduler = BackgroundScheduler()
@@ -211,8 +211,9 @@ def import_next_paper_tasks(project_id: int) -> None:
         return
    
     try: 
-        providers = ['gpt-4o'] 
-        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b']  
+        # providers = ['gpt-4o']
+        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b']
+        providers = ['openai/gpt-oss-120b']
         paper_data = None 
         for provider in providers:
             try:
@@ -384,3 +385,4 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
     except Exception as e:
         print(f"Error saving annotation to MinIO: {e}")
         raise
+
