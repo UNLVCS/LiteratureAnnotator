@@ -4,9 +4,6 @@ import os
 
 class VectorDb():
     def __init__(self, index_name: str = "adbm"):
-        #load_dotenv(find_dotenv(), override=True)
-        key = os.getenv('PINECONE_API_KEY')
-        print('PINECONE_API_KEY', key)
         self.pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 
         try:
