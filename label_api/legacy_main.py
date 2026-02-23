@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import FastAPI, Request, BackgroundTasks 
 from pydantic import BaseModel
 from label_api.lstudio_interfacer_sdk import LabellerSDK
+from label_api.human_labeller_sdk import HumanLabellerSDK
+from label_api.human_import import import_next_human_tasks
 # from label_api.lstudio_interfacer import Labeller
 from langchain_openai import ChatOpenAI 
 from langchain_core.prompts import ChatPromptTemplate
@@ -66,6 +68,7 @@ scheduler = BackgroundScheduler()
 
 
 LS = LabellerSDK()
+LS_Human = HumanLabellerSDK()
 app = FastAPI()
 
 @app.get("/health")
@@ -75,16 +78,16 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_event():
-    # Use Docker service name or fallback to localhost for local dev
     webhook_host = os.getenv("WEBHOOK_HOST", "http://localhost:8000")
-    LS.create_webhook(
-        endpoint=f"{webhook_host}/webhook"
-    ) 
-    # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
-    # This ensures tasks are loaded even if the project already exists
-    import_next_paper_tasks(LS.project_id)
+    webhook_url = f"{webhook_host}/webhook"
+    LS.create_webhook(endpoint=webhook_url)
+    LS_Human.create_webhook(endpoint=webhook_url)
 
-    scheduler.add_job(periodic_paper_check, 'interval', minutes=3, id='periodic_paper_check')
+    import_next_paper_tasks(LS.project_id)
+    import_next_human_tasks(LS_Human)
+
+    scheduler.add_job(periodic_paper_check, "interval", minutes=3, id="periodic_paper_check")
+    scheduler.add_job(periodic_human_paper_check, "interval", minutes=3, id="periodic_human_paper_check")
     scheduler.start()
     print("[Startup] Scheduler started")
     return {"status": "ok"}
@@ -106,42 +109,35 @@ class CriteriaRequest(BaseModel):
 async def ls_webhook(req: Request, bg: BackgroundTasks):
     payload = await req.json()
     action = payload.get("action")
+    proj_id = payload.get("project", {}).get("id")
 
     print("==========================================")
-    print("WEBHOOK RECEIVED: ", action)
+    print("WEBHOOK RECEIVED: ", action, "project_id:", proj_id)
     print("==========================================")
-    # print(payload.get("event", "no_event"))
 
-
-    if  action == "PROJECT_CREATED": 
-        # If a new project is created, we can start importing tasks
-        proj_id = payload["project"]["id"]  
-        bg.add_task(import_next_paper_tasks, proj_id)
+    if action == "PROJECT_CREATED":
+        if proj_id == LS_Human.project_id:
+            bg.add_task(import_next_human_tasks, LS_Human)
+        else:
+            bg.add_task(import_next_paper_tasks, proj_id)
         return {"status": "ok", "event": "project_created"}
 
-        # return {"status": "ignored", "event": payload.get("event")}
+    if action in ("ANNOTATION_CREATED", "ANNOTATION_UPDATED"):
+        task_info = payload.get("task", {})
+        annotation = payload.get("annotation", {})
+        if proj_id == LS_Human.project_id:
+            bg.add_task(handle_completed_human_task, task_info, annotation)
+        else:
+            bg.add_task(handle_completed_task, task_info, annotation)
 
-    proj_id = payload["project"]["id"]
-
-    # if  action == "TASK_CREATED":
-    if  action == "ANNOTATION_CREATED":
-        task_info = payload["task"]
-        annotation = payload["annotation"]
-        bg.add_task(handle_completed_task, task_info, annotation)
-        return {"status": "ok", "event": "annotation_completed"}
-
-    if action == "ANNOTATION_UPDATED":
-        task_info = payload["task"]
-        annotation = payload["annotation"]
-        bg.add_task(handle_completed_task, task_info, annotation)
-        return {"status": "ok", "event": "annotation_updated"}
-    # Handle the completed task in the background
-    # bg.add_task(handle_completed_task, task_info, annotation)e
- 
-    # If there are no new tasks left in the project, pull the next paper from the queue
-    new_count = LS.count_new_tasks(proj_id)
-    if new_count == 0:
-        bg.add_task(import_next_paper_tasks, proj_id)
+    if proj_id == LS_Human.project_id:
+        new_count = LS_Human.count_new_tasks(proj_id)
+        if new_count == 0:
+            bg.add_task(import_next_human_tasks, LS_Human)
+    else:
+        new_count = LS.count_new_tasks(proj_id)
+        if new_count == 0:
+            bg.add_task(import_next_paper_tasks, proj_id)
 
     return {"status": "ok"}  
 
@@ -183,10 +179,22 @@ def periodic_paper_check():
         print(f"[Periodic Paper Check] New tasks: {new_count}")
 
         if new_count < 5:
-            print("[Periodic Paper Check] No new tasks found, importing next paper")
+            print("[Periodic Paper Check] Importing next paper")
             import_next_paper_tasks(LS.project_id)
     except Exception as e:
         print(f"[Periodic Paper Check] Error: {e}")
+
+
+def periodic_human_paper_check():
+    try:
+        new_count = LS_Human.count_new_tasks(LS_Human.project_id)
+        print(f"[Periodic Human Check] New tasks: {new_count}")
+
+        if new_count < 5:
+            print("[Periodic Human Check] Importing next paper")
+            import_next_human_tasks(LS_Human)
+    except Exception as e:
+        print(f"[Periodic Human Check] Error: {e}")
 
 def import_next_paper_tasks(project_id: int) -> None:
     """Pull the next paper from the queue and create Label Studio tasks. 
@@ -341,6 +349,8 @@ def import_next_paper_tasks(project_id: int) -> None:
 
 # MinIO bucket for completed annotations
 ANNOTATIONS_BUCKET = os.getenv("ANNOTATIONS_BUCKET", "completed-annotations")
+HUMAN_ANNOTATIONS_BUCKET = os.getenv("HUMAN_ANNOTATIONS_BUCKET", "human-annotations")
+
 
 def _ensure_annotations_bucket():
     """Create the annotations bucket if it doesn't exist."""
@@ -384,5 +394,46 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
         print(f"Saved annotation to MinIO: {ANNOTATIONS_BUCKET}/{object_name}")
     except Exception as e:
         print(f"Error saving annotation to MinIO: {e}")
+        raise
+
+
+def _ensure_human_annotations_bucket():
+    """Create the human annotations bucket if it doesn't exist."""
+    try:
+        if not client.bucket_exists(HUMAN_ANNOTATIONS_BUCKET):
+            client.make_bucket(HUMAN_ANNOTATIONS_BUCKET)
+            print(f"Created bucket: {HUMAN_ANNOTATIONS_BUCKET}")
+    except Exception as e:
+        print(f"Error checking/creating bucket {HUMAN_ANNOTATIONS_BUCKET}: {e}")
+
+
+def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
+    """Save completed human annotation to MinIO bucket."""
+    record: Dict[str, Any] = {}
+    for prefix, d in (("task", task), ("ann", annotation)):
+        for k, v in d.items():
+            record[f"{prefix}_{k}"] = v
+
+    paper_id = task.get("data", {}).get("paper_id", "unknown")
+    task_id = task.get("id", "unknown")
+    annotation_id = annotation.get("id", "unknown")
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    object_name = f"{paper_id}/{task_id}_{annotation_id}_{timestamp}.json"
+
+    json_data = json.dumps(record, indent=2, default=str)
+    data_bytes = json_data.encode("utf-8")
+
+    try:
+        _ensure_human_annotations_bucket()
+        client.put_object(
+            bucket_name=HUMAN_ANNOTATIONS_BUCKET,
+            object_name=object_name,
+            data=BytesIO(data_bytes),
+            length=len(data_bytes),
+            content_type="application/json",
+        )
+        print(f"Saved human annotation to MinIO: {HUMAN_ANNOTATIONS_BUCKET}/{object_name}")
+    except Exception as e:
+        print(f"Error saving human annotation to MinIO: {e}")
         raise
 
