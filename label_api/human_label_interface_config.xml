@@ -1,0 +1,108 @@
+<!--
+  Label Studio Labeling Configuration - Human Labeling Project
+  Users make classification decisions directly from chunks (no LLM pre-labeling).
+  Same two-column layout: criteria + retrieved chunks (left), evaluation (right).
+  Choices: SATISFIED / NOT_SATISFIED / ABSTAIN per criterion.
+-->
+<View>
+
+  <!-- Main Header - no provider -->
+  <View style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; border-radius: 8px; margin-bottom: 20px; color: white;">
+    <Header value="Paper ID: $paper_id" style="color: white; font-size: 18px; margin-bottom: 5px;" />
+    <Text name="title_display" value="$title" style="color: rgba(255,255,255,0.9); font-size: 14px; font-style: italic;" />
+  </View>
+
+  <!-- Two-Column Layout: Criteria Display (Left) + Evaluation Section (Right) -->
+  <View style="display: flex; gap: 20px; align-items: flex-start;">
+
+    <!-- LEFT COLUMN: Display all criteria using pre-formatted HTML (chunks + criteria prompt, no LLM output) -->
+    <View style="flex: 1 1 60%; margin-bottom: 30px; padding: 20px; background: #ffffff; border-radius: 12px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-height: 85vh; overflow-y: auto;">
+      <HyperText name="criteria_display" value="$criteria_html" />
+    </View>
+
+    <!-- RIGHT COLUMN: Individual Evaluation Sections - SATISFIED / NOT_SATISFIED / ABSTAIN -->
+    <View style="flex: 1 1 38%; position: sticky; top: 20px; max-height: 85vh; overflow-y: auto; background: #f8f9fa; padding: 15px; border-radius: 12px; border: 2px solid #dee2e6; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+      <Header value="Your Classification" style="font-size: 18px; font-weight: 700; color: #2c3e50; margin-bottom: 20px; text-align: center; position: sticky; top: 0; background: #f8f9fa; padding: 10px 0; z-index: 10;" />
+
+    <!-- Criterion 1 -->
+    <View style="margin-bottom: 20px; padding: 18px; background: #ffffff; border-radius: 8px; border: 2px solid #dee2e6; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <Header value="Criterion 1" style="font-size: 15px; font-weight: 700; color: #2c3e50; margin-bottom: 12px;" />
+      <Choices name="evaluation_criterion_1" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+        <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_1" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
+    </View>
+
+    <!-- Criterion 2 -->
+    <View style="margin-bottom: 20px; padding: 18px; background: #ffffff; border-radius: 8px; border: 2px solid #dee2e6; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <Header value="Criterion 2" style="font-size: 15px; font-weight: 700; color: #2c3e50; margin-bottom: 12px;" />
+      <Choices name="evaluation_criterion_2" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+        <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_2" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
+    </View>
+
+    <!-- Criterion 3 -->
+    <View style="margin-bottom: 20px; padding: 18px; background: #ffffff; border-radius: 8px; border: 2px solid #dee2e6; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <Header value="Criterion 3" style="font-size: 15px; font-weight: 700; color: #2c3e50; margin-bottom: 12px;" />
+      <Choices name="evaluation_criterion_3" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+        <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_3" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
+    </View>
+
+    <!-- Criterion 4 -->
+    <View style="margin-bottom: 20px; padding: 18px; background: #ffffff; border-radius: 8px; border: 2px solid #dee2e6; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <Header value="Criterion 4" style="font-size: 15px; font-weight: 700; color: #2c3e50; margin-bottom: 12px;" />
+      <Choices name="evaluation_criterion_4" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+        <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_4" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
+    </View>
+
+    <!-- Criterion 5 -->
+    <View style="margin-bottom: 20px; padding: 18px; background: #ffffff; border-radius: 8px; border: 2px solid #dee2e6; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <Header value="Criterion 5" style="font-size: 15px; font-weight: 700; color: #2c3e50; margin-bottom: 12px;" />
+      <Choices name="evaluation_criterion_5" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+        <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_5" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
+    </View>
+
+    <!-- Criterion 6 -->
+    <View style="margin-bottom: 20px; padding: 18px; background: #ffffff; border-radius: 8px; border: 2px solid #dee2e6; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+      <Header value="Criterion 6" style="font-size: 15px; font-weight: 700; color: #2c3e50; margin-bottom: 12px;" />
+      <Choices name="evaluation_criterion_6" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+        <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="ABSTAIN" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+      </Choices>
+      <TextArea name="explanation_criterion_6" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
+    </View>
+
+    </View>
+    <!-- End of Right Column -->
+
+  </View>
+  <!-- End of Two-Column Layout -->
+
+  <!-- Additional Notes -->
+  <View style="margin-top: 30px; padding: 25px; background: #ffffff; border-radius: 8px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+    <Header value="Additional Notes (Optional)" style="font-size: 16px; font-weight: 600; color: #495057; margin-bottom: 10px;" />
+    <TextArea name="additional_notes" toName="criteria_display"
+              placeholder="Any additional notes or observations about the paper or criteria evaluation..."
+              rows="4"
+              style="border: 2px solid #dee2e6; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.6;" />
+  </View>
+
+</View>
