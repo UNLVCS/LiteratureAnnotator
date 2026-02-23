@@ -4,9 +4,10 @@ import os
 
 class VectorDb():
     def __init__(self, index_name: str = "adbm"):
-        load_dotenv(find_dotenv(), override=True)
-        # self.pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
-        self.pc = Pinecone(api_key="pcsk_udGQD_Juk7zx5VqT6oyJpFsJc9WQbdwFjf8Yj2v9VSZEjyTP9aYsA6Dtt8xwCa7gC9VBi")
+        #load_dotenv(find_dotenv(), override=True)
+        key = os.getenv('PINECONE_API_KEY')
+        print('PINECONE_API_KEY', key)
+        self.pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
 
         try:
             self.pc.create_index(
