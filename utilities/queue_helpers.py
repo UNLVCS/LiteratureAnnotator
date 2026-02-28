@@ -13,6 +13,11 @@ ANN_QUEUE       = os.getenv("ANN_QUEUE", "q:annotations:completed:v1")
 COMPLETED_PAPERS_QUEUE = os.getenv("COMPLETED_PAPERS_QUEUE", "q:papers:completed:v1")
 GENERATED_SET       = os.getenv("GENERATED_SET", "s:papers:generated:v1")
 
+# Human labeling project queue (separate from RAG)
+HUMAN_PAPER_QUEUE   = os.getenv("HUMAN_PAPER_QUEUE", "q:papers:human:v1")
+HUMAN_PROCESSING_Q  = os.getenv("HUMAN_PROCESSING_Q", "q:papers:human:processing:v1")
+HUMAN_DEDUP_SET     = os.getenv("HUMAN_DEDUP_SET", "s:papers:human:enqueued:v1")
+
 # When the annotations queue grows beyond this threshold, persist to disk
 ANN_FLUSH_THRESHOLD = int(os.getenv("ANN_FLUSH_THRESHOLD", "1000"))
 # Path to append persisted annotations (JSON Lines format)
@@ -98,6 +103,51 @@ def requeue_inflight(paper_id: str) -> None:
 
 def paper_queue_len() -> int:
     return r.llen(PAPER_QUEUE)
+
+# ---------------------------------------------------------------------------
+# Human labeling project queue helpers
+# ---------------------------------------------------------------------------
+
+def enqueue_paper_id_human(paper_id: str) -> bool:
+    """Add paper ID to human queue once; skip duplicates."""
+    added = r.sadd(HUMAN_DEDUP_SET, paper_id)
+    if added:
+        r.rpush(HUMAN_PAPER_QUEUE, paper_id)
+    return bool(added)
+
+def claim_next_paper_human(block_timeout: int = 0) -> Optional[str]:
+    """
+    Claim next paper from human queue (atomically move to processing).
+    After successful processing, call ack_paper_human(paper_id).
+    Returns None if no papers available or timeout occurs.
+    """
+    try:
+        if block_timeout == 0 and r.llen(HUMAN_PAPER_QUEUE) == 0:
+            return None
+        pid = r.brpoplpush(HUMAN_PAPER_QUEUE, HUMAN_PROCESSING_Q, timeout=block_timeout)
+        if pid:
+            enqueue_paper_id_human(pid)  # Same pattern as RAG queue
+        return pid
+    except redis.exceptions.ConnectionError as e:
+        print(f"Redis connection error while claiming human paper: {e}")
+        raise
+    except redis.exceptions.RedisError as e:
+        print(f"Redis error while claiming human paper: {e}")
+        raise
+
+def ack_paper_human(paper_id: str) -> None:
+    """Remove from human processing queue and dedup set after success."""
+    r.lrem(HUMAN_PROCESSING_Q, 0, paper_id)
+    r.srem(HUMAN_DEDUP_SET, paper_id)
+
+def requeue_inflight_human(paper_id: str) -> None:
+    """Put paper back in human queue if processing fails."""
+    r.lrem(HUMAN_PROCESSING_Q, 0, paper_id)
+    r.lpush(HUMAN_PAPER_QUEUE, paper_id)
+
+def human_paper_queue_len() -> int:
+    """Return the number of papers in the human queue."""
+    return r.llen(HUMAN_PAPER_QUEUE)
 
 def push_completed_annotation(record: dict) -> None:
     """Push a completed annotation to the queue and flush to disk if large.
