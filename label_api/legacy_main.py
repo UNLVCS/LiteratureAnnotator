@@ -1,42 +1,43 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Request, BackgroundTasks 
-from pydantic import BaseModel
-from label_api.lstudio_interfacer_sdk import LabellerSDK
-# from label_api.lstudio_interfacer import Labeller
-from langchain_openai import ChatOpenAI 
-from langchain_core.prompts import ChatPromptTemplate
-# from langchain.chains import RetrievalQA 
-# from langchain import hub
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-# from utilities.vector_db import VectorDb
 import json
 import html
-from typing import Any, Dict, Optional, Tuple   
-from apscheduler.schedulers.background import BackgroundScheduler
 import os
- 
-# Queue helpers (use these instead of any local Redis calls)
-from utilities.queue_helpers import (
-    enqueue_paper_id,
-    pop_paper_id,             # simple pattern
-    claim_next_paper,         # safer pattern (claim + ack/requeue)
-    ack_paper,
-    requeue_inflight,
-    claim_next_paper_from_set
-)
 from datetime import datetime
-from io import BytesIO 
+from io import BytesIO
+from typing import Any, Dict, Optional, Tuple
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv, find_dotenv
+from fastapi import FastAPI, Request, BackgroundTasks
 from minio import Minio
-# MinIO client configuration (uses env vars for Docker compatibility)
-client = Minio(
-    os.getenv("MINIO_ENDPOINT", "localhost:9000"),
-    access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-    secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
-    secure=os.getenv("MINIO_SECURE", "false").lower() == "true"
+from pydantic import BaseModel
+
+from config import load_config
+from label_api.config import LabelApiConfig
+from label_api.lstudio_interfacer_sdk import LabellerSDK
+from utilities.queue_helpers import (
+    ack_paper,
+    claim_next_paper,
+    claim_next_paper_from_set,
+    enqueue_paper_id,
+    pop_paper_id,
+    requeue_inflight,
 )
-bucket_name = os.getenv("MINIO_BUCKET", "v4-criteria-classified-articles")
+
+load_dotenv(find_dotenv(), override=True)
+
+# Load config at startup; validates required env vars
+_label_config = load_config(LabelApiConfig)
+
+# MinIO client configuration (from config)
+client = Minio(
+    _label_config.minio_endpoint,
+    access_key=_label_config.minio_access_key,
+    secret_key=_label_config.minio_secret_key,
+    secure=_label_config.minio_secure,
+)
+bucket_name = _label_config.minio_bucket
 
 # Scheduler for background tasks
 scheduler = BackgroundScheduler()
@@ -65,7 +66,10 @@ scheduler = BackgroundScheduler()
 # ]
 
 
-LS = LabellerSDK()
+LS = LabellerSDK(
+    base_url=_label_config.label_studio_url or None,
+    api_key=_label_config.label_studio_api_key or None,
+)
 app = FastAPI()
 
 @app.get("/health")
@@ -75,10 +79,8 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_event():
-    # Use Docker service name or fallback to localhost for local dev
-    webhook_host = os.getenv("WEBHOOK_HOST", "http://localhost:8000")
     LS.create_webhook(
-        endpoint=f"{webhook_host}/webhook"
+        endpoint=f"{_label_config.webhook_host}/webhook"
     ) 
     # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
     # This ensures tasks are loaded even if the project already exists
@@ -338,15 +340,12 @@ def import_next_paper_tasks(project_id: int) -> None:
 # Completed task handling
 # --------------------
 
-# MinIO bucket for completed annotations
-ANNOTATIONS_BUCKET = os.getenv("ANNOTATIONS_BUCKET", "completed-annotations")
-
 def _ensure_annotations_bucket():
     """Create the annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(ANNOTATIONS_BUCKET):
-            client.make_bucket(ANNOTATIONS_BUCKET)
-            print(f"Created bucket: {ANNOTATIONS_BUCKET}")
+        if not client.bucket_exists(_label_config.annotations_bucket):
+            client.make_bucket(_label_config.annotations_bucket)
+            print(f"Created bucket: {_label_config.annotations_bucket}")
     except Exception as e:
         print(f"Error checking/creating bucket {ANNOTATIONS_BUCKET}: {e}")
 
@@ -374,13 +373,13 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
     try:
         _ensure_annotations_bucket()
         client.put_object(
-            bucket_name=ANNOTATIONS_BUCKET,
+            bucket_name=_label_config.annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json"
         )
-        print(f"Saved annotation to MinIO: {ANNOTATIONS_BUCKET}/{object_name}")
+        print(f"Saved annotation to MinIO: {_label_config.annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving annotation to MinIO: {e}")
         raise

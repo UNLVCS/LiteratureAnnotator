@@ -18,12 +18,12 @@ class LabellerSDK:
     - Create webhooks with configured actions
     """
 
-    def __init__(self):
+    def __init__(self, *, base_url: Optional[str] = None, api_key: Optional[str] = None):
         load_dotenv()
 
         self.client = LabelStudio(
-            base_url=os.getenv("LABEL_STUDIO_URL"),
-            api_key=os.getenv("LABEL_STUDIO_API_KEY"),
+            base_url=base_url if base_url is not None else os.getenv("LABEL_STUDIO_URL"),
+            api_key=api_key if api_key is not None else os.getenv("LABEL_STUDIO_API_KEY"),
         )
 
         # Load XML label config from file co-located with this module by default

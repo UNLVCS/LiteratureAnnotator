@@ -1,32 +1,28 @@
-import os, json, redis
-import atexit, signal, threading
+import os
+import json
+import redis
+import atexit
+import signal
+import threading
 from typing import Optional
+
 from dotenv import load_dotenv, find_dotenv
+
+from config import load_config
+from config.queue_config import QueueConfig
 
 load_dotenv(find_dotenv(), override=True)
 
-REDIS_URL       = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-PAPER_QUEUE     = os.getenv("PAPER_QUEUE", "q:papers:v1")
-PROCESSING_Q    = os.getenv("PAPER_PROCESSING", "q:papers:processing:v1")
-DEDUP_SET       = os.getenv("PAPER_DEDUP_SET", "s:papers:enqueued:v1")
-ANN_QUEUE       = os.getenv("ANN_QUEUE", "q:annotations:completed:v1")
-COMPLETED_PAPERS_QUEUE = os.getenv("COMPLETED_PAPERS_QUEUE", "q:papers:completed:v1")
-GENERATED_SET       = os.getenv("GENERATED_SET", "s:papers:generated:v1")
-
-# When the annotations queue grows beyond this threshold, persist to disk
-ANN_FLUSH_THRESHOLD = int(os.getenv("ANN_FLUSH_THRESHOLD", "1000"))
-# Path to append persisted annotations (JSON Lines format)
-ANN_PERSIST_PATH = os.getenv("ANN_PERSIST_PATH", "data_labeling/annotations.jsonl")
-ANN_FLUSH_ON_EXIT = os.getenv("ANN_FLUSH_ON_EXIT", "1") not in ("0", "false", "False")
-ANN_INSTALL_SIGNAL_HANDLERS = os.getenv("ANN_INSTALL_SIGNAL_HANDLERS", "1") not in ("0", "false", "False")
+# Load config at module init; validates required env vars at startup
+_queue_config = load_config(QueueConfig)
 
 # Guard against concurrent or re-entrant flushes (e.g., signal + atexit)
 _flush_lock = threading.Lock()
 _has_flushed_on_shutdown = False
 
-print(REDIS_URL)
+print(_queue_config.redis_url)
 r = redis.Redis.from_url(
-    REDIS_URL,
+    _queue_config.redis_url,
     decode_responses=True,
     health_check_interval=30,
     socket_connect_timeout=5,
@@ -37,22 +33,22 @@ r = redis.Redis.from_url(
 
 def enqueue_paper_id(paper_id: str) -> bool:
     """Add once; skip duplicates."""
-    added = r.sadd(DEDUP_SET, paper_id)
+    added = r.sadd(_queue_config.paper_dedup_set, paper_id)
     if added:
-        r.rpush(PAPER_QUEUE, paper_id)
+        r.rpush(_queue_config.paper_queue, paper_id)
     return bool(added) 
 
 def pop_paper_id(block: bool = False, timeout: int = 0) -> str or None:
     """Simple pop (use when reliability is less critical)."""
     if block:
-        item = r.blpop(PAPER_QUEUE, timeout=timeout)
+        item = r.blpop(_queue_config.paper_queue, timeout=timeout)
         if not item:
             return None
         _, pid = item
     else:
-        pid = r.lpop(PAPER_QUEUE)
+        pid = r.lpop(_queue_config.paper_queue)
     if pid:
-        r.srem(DEDUP_SET, pid)
+        r.srem(_queue_config.paper_dedup_set, pid)
     return pid
 
 def claim_next_paper(block_timeout: int = 0) -> str or None:
@@ -63,10 +59,14 @@ def claim_next_paper(block_timeout: int = 0) -> str or None:
     """
     try:
         # First check if queue is empty to avoid unnecessary blocking
-        if block_timeout == 0 and r.llen(PAPER_QUEUE) == 0:
+        if block_timeout == 0 and r.llen(_queue_config.paper_queue) == 0:
             return None
-            
-        pid = r.brpoplpush(PAPER_QUEUE, PROCESSING_Q, timeout=block_timeout)
+
+        pid = r.brpoplpush(
+            _queue_config.paper_queue,
+            _queue_config.paper_processing,
+            timeout=block_timeout,
+        )
         if pid:
             enqueue_paper_id(pid) # Put it back in the queue just for now. REPLACE LATER
         return pid  # None on timeout
@@ -77,27 +77,29 @@ def claim_next_paper(block_timeout: int = 0) -> str or None:
         print(f"Redis error while claiming paper: {e}")
         raise
 
-def claim_next_paper_from_set(block_timeout: int = 0) -> str or None:
+def claim_next_paper_from_set(block_timeout: int = 0) -> str | None:
     """Claim a paper from the deduplication set."""
-    pid = r.spop(GENERATED_SET)
+    pid = r.spop(_queue_config.generated_set)
     if pid:
-        r.rpush(PROCESSING_Q, pid)
+        r.rpush(_queue_config.paper_processing, pid)
     if pid:
         return pid
     return None
 
 def ack_paper(paper_id: str) -> None:
     """Remove from processing + dedupe set after success."""
-    r.lrem(PROCESSING_Q, 0, paper_id)
-    r.srem(DEDUP_SET, paper_id)
+    r.lrem(_queue_config.paper_processing, 0, paper_id)
+    r.srem(_queue_config.paper_dedup_set, paper_id)
+
 
 def requeue_inflight(paper_id: str) -> None:
     """Put it back if processing fails."""
-    r.lrem(PROCESSING_Q, 0, paper_id)
-    r.lpush(PAPER_QUEUE, paper_id)
+    r.lrem(_queue_config.paper_processing, 0, paper_id)
+    r.lpush(_queue_config.paper_queue, paper_id)
+
 
 def paper_queue_len() -> int:
-    return r.llen(PAPER_QUEUE)
+    return r.llen(_queue_config.paper_queue)
 
 def push_completed_annotation(record: dict) -> None:
     """Push a completed annotation to the queue and flush to disk if large.
@@ -109,7 +111,7 @@ def push_completed_annotation(record: dict) -> None:
     # Accept both dict objects and JSON strings
     try:
         payload = record if isinstance(record, str) else json.dumps(record)
-        r.rpush(ANN_QUEUE, payload)
+        r.rpush(_queue_config.ann_queue, payload)
     except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
         print(f"Redis connection issue while pushing annotation: {e}")
         # Redis is potentially shutting down - try to flush what we have
@@ -120,7 +122,7 @@ def push_completed_annotation(record: dict) -> None:
         raise  # Re-raise the original error
 
     try:
-        qlen = r.llen(ANN_QUEUE)
+        qlen = r.llen(_queue_config.ann_queue)
     except (redis.exceptions.ConnectionError, redis.exceptions.TimeoutError) as e:
         print(f"Redis connection issue while checking queue length: {e}")
         # Redis might be shutting down - try to flush
@@ -134,12 +136,12 @@ def push_completed_annotation(record: dict) -> None:
         print(f"Redis error while checking queue length: {e}")
         return
 
-    if ANN_FLUSH_THRESHOLD > 0 and qlen > ANN_FLUSH_THRESHOLD:
+    if _queue_config.ann_flush_threshold > 0 and qlen > _queue_config.ann_flush_threshold:
         flush_annotations_to_persistent()
 
 def annotation_queue_len() -> int:
     """Return the current number of items in the annotations queue."""
-    return r.llen(ANN_QUEUE)
+    return r.llen(_queue_config.ann_queue)
 
 def flush_annotations_to_persistent(max_items: Optional[int] = None) -> int:
     """Drain annotations from Redis to persistent storage (JSONL file).
@@ -150,14 +152,14 @@ def flush_annotations_to_persistent(max_items: Optional[int] = None) -> int:
     # Atomically fetch and trim/delete using a pipeline transaction
     if max_items and max_items > 0:
         pipe = r.pipeline()
-        pipe.lrange(ANN_QUEUE, 0, max_items - 1)
-        pipe.ltrim(ANN_QUEUE, max_items, -1)
+        pipe.lrange(_queue_config.ann_queue, 0, max_items - 1)
+        pipe.ltrim(_queue_config.ann_queue, max_items, -1)
         results = pipe.execute()
         items = results[0]
     else:
         pipe = r.pipeline()
-        pipe.lrange(ANN_QUEUE, 0, -1)
-        pipe.delete(ANN_QUEUE)
+        pipe.lrange(_queue_config.ann_queue, 0, -1)
+        pipe.delete(_queue_config.ann_queue)
         results = pipe.execute()
         items = results[0]
 
@@ -165,12 +167,12 @@ def flush_annotations_to_persistent(max_items: Optional[int] = None) -> int:
         return 0
 
     # Ensure directory exists if a directory component is provided
-    dirname = os.path.dirname(ANN_PERSIST_PATH)
+    dirname = os.path.dirname(_queue_config.ann_persist_path)
     if dirname:
         os.makedirs(dirname, exist_ok=True)
 
     try:
-        with open(ANN_PERSIST_PATH, "a", encoding="utf-8") as f:
+        with open(_queue_config.ann_persist_path, "a", encoding="utf-8") as f:
             for line in items:
                 # Items are strings (already JSON); ensure newline-delimited
                 text = line if isinstance(line, str) else json.dumps(line)
@@ -185,7 +187,7 @@ def flush_annotations_to_persistent(max_items: Optional[int] = None) -> int:
         try:
             with r.pipeline() as p:
                 for entry in reversed(items):
-                    p.lpush(ANN_QUEUE, entry)
+                    p.lpush(_queue_config.ann_queue, entry)
                 p.execute()
         finally:
             pass
@@ -201,7 +203,7 @@ def _flush_annotations_on_shutdown() -> None:
         try:
             flushed = flush_annotations_to_persistent()
             if flushed:
-                print(f"Flushed {flushed} annotations to {ANN_PERSIST_PATH} on shutdown")
+                print(f"Flushed {flushed} annotations to {_queue_config.ann_persist_path} on shutdown")
         except Exception as e:
             # Best-effort; do not raise during shutdown
             print(f"Failed to flush annotations on shutdown: {e}")
@@ -223,10 +225,10 @@ def _make_signal_handler(prev_handler):
     return handler
 
 # Register shutdown hooks based on env configuration
-if ANN_FLUSH_ON_EXIT:
+if _queue_config.ann_flush_on_exit:
     atexit.register(_flush_annotations_on_shutdown)
 
-if ANN_INSTALL_SIGNAL_HANDLERS:
+if _queue_config.ann_install_signal_handlers:
     for sig in (signal.SIGINT, signal.SIGTERM):
         try:
             prev = signal.getsignal(sig)
@@ -241,16 +243,17 @@ def shutdown_annotations() -> None:
 
 def push_completed_paper(paper_id: str) -> None:
     """Add a paper ID to the completed papers queue."""
-    r.sadd(GENERATED_SET, paper_id)
+    r.sadd(_queue_config.generated_set, paper_id)
     # r.rpush(COMPLETED_PAPERS_QUEUE, paper_id)
 
 def get_all_completed_papers() -> list:
     """Retrieve all completed paper IDs from the queue (non-destructive)."""
-    return r.lrange(COMPLETED_PAPERS_QUEUE, 0, -1)
+    return r.lrange(_queue_config.completed_papers_queue, 0, -1)
+
 
 def completed_papers_count() -> int:
     """Return the count of completed papers in the queue."""
-    return r.llen(COMPLETED_PAPERS_QUEUE)
+    return r.llen(_queue_config.completed_papers_queue)
 
 def export_completed_papers_to_file(filepath: str = "completed_papers.txt") -> int:
     """Export all completed paper IDs to a text file (one per line).

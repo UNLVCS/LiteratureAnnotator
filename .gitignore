@@ -11,3 +11,4 @@ data_labeling
 *.err
 *.out
 vllm-serve.sh
+.idea/
