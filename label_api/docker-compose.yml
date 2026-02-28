@@ -124,9 +124,9 @@ services:
       - ANN_PERSIST_PATH=/app/data_labeling/annotations.jsonl
       - ANN_FLUSH_THRESHOLD=100
       # OpenAI (if using RAG features)
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # OPENAI_API_KEY=${OPENAI_API_KEY:-}
       # Pinecone (if using vector store)
-      - PINECONE_API_KEY=${PINECONE_API_KEY:-}
+      # PINECONE_API_KEY=${PINECONE_API_KEY:-}
       # Webhook host (for Label Studio to call back)
       - WEBHOOK_HOST=http://host.docker.internal:8000
     volumes:

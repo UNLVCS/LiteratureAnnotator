@@ -27,3 +27,4 @@ class LabelApiConfig:
     # Webhook & buckets
     webhook_host: Annotated[str, Env("WEBHOOK_HOST"), Default("http://localhost:8000")]
     annotations_bucket: Annotated[str, Env("ANNOTATIONS_BUCKET"), Default("completed-annotations")]
+    human_annotations_bucket: Annotated[str, Env("HUMAN_ANNOTATIONS_BUCKET"), Default("human-annotations")]

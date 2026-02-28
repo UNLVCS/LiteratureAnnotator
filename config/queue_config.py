@@ -24,3 +24,6 @@ class QueueConfig:
     ann_persist_path: Annotated[str, Env("ANN_PERSIST_PATH"), Default("data_labeling/annotations.jsonl")]
     ann_flush_on_exit: Annotated[bool, Env("ANN_FLUSH_ON_EXIT"), Default(True)]
     ann_install_signal_handlers: Annotated[bool, Env("ANN_INSTALL_SIGNAL_HANDLERS"), Default(True)]
+    HUMAN_PAPER_QUEUE: Annotated[str, Env("HUMAN_PAPER_QUEUE"), Default('q:papers:human:v1')]
+    HUMAN_PROCESSING_Q: Annotated[str, Env("HUMAN_PROCESSING_Q"), Default('q:papers:human:processing:v1')]
+    HUMAN_DEDUP_SET: Annotated[str, Env("HUMAN_DEDUP_SET"), Default('s:papers:human:enqueued:v1')]

@@ -99,7 +99,54 @@ def requeue_inflight(paper_id: str) -> None:
 
 
 def paper_queue_len() -> int:
+    #TODO await this if it is a task
     return r.llen(_queue_config.paper_queue)
+
+# ---------------------------------------------------------------------------
+# Human labeling project queue helpers
+# ---------------------------------------------------------------------------
+
+def enqueue_paper_id_human(paper_id: str) -> bool:
+    """Add paper ID to human queue once; skip duplicates."""
+    added = r.sadd(_queue_config.HUMAN_DEDUP_SET, paper_id)
+    if added:
+        r.rpush(_queue_config.HUMAN_PAPER_QUEUE, paper_id)
+    return bool(added)
+
+def claim_next_paper_human(block_timeout: int = 0) -> Optional[str]:
+    """
+    Claim next paper from human queue (atomically move to processing).
+    After successful processing, call ack_paper_human(paper_id).
+    Returns None if no papers available or timeout occurs.
+    """
+    try:
+        if block_timeout == 0 and r.llen(_queue_config.HUMAN_PAPER_QUEUE) == 0:
+            return None
+        pid = r.brpoplpush(_queue_config.HUMAN_PAPER_QUEUE, _queue_config.HUMAN_PROCESSING_Q, timeout=block_timeout)
+        if pid:
+            enqueue_paper_id_human(pid)  # Same pattern as RAG queue
+        return pid
+    except redis.exceptions.ConnectionError as e:
+        print(f"Redis connection error while claiming human paper: {e}")
+        raise
+    except redis.exceptions.RedisError as e:
+        print(f"Redis error while claiming human paper: {e}")
+        raise
+
+def ack_paper_human(paper_id: str) -> None:
+    """Remove from human processing queue and dedup set after success."""
+    r.lrem(_queue_config.HUMAN_PROCESSING_Q, 0, paper_id)
+    r.srem(_queue_config.HUMAN_DEDUP_SET, paper_id)
+
+def requeue_inflight_human(paper_id: str) -> None:
+    """Put paper back in human queue if processing fails."""
+    r.lrem(_queue_config.HUMAN_PROCESSING_Q, 0, paper_id)
+    r.lpush(_queue_config.HUMAN_PAPER_QUEUE, paper_id)
+
+def human_paper_queue_len() -> int:
+    """Return the number of papers in the human queue."""
+    #TODO await this if its a task
+    return r.llen(_queue_config.HUMAN_PAPER_QUEUE)
 
 def push_completed_annotation(record: dict) -> None:
     """Push a completed annotation to the queue and flush to disk if large.
@@ -248,11 +295,13 @@ def push_completed_paper(paper_id: str) -> None:
 
 def get_all_completed_papers() -> list:
     """Retrieve all completed paper IDs from the queue (non-destructive)."""
+    #TODO await this
     return r.lrange(_queue_config.completed_papers_queue, 0, -1)
 
 
 def completed_papers_count() -> int:
     """Return the count of completed papers in the queue."""
+    #TODO await this
     return r.llen(_queue_config.completed_papers_queue)
 
 def export_completed_papers_to_file(filepath: str = "completed_papers.txt") -> int:
