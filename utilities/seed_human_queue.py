@@ -5,10 +5,13 @@ Paper IDs must exist in Pinecone (chunked via data_label.py).
 
 import os
 
-from queue_helpers import enqueue_paper_id_human
+from config import load_config
+from config.seed_configs import SeedHumanQueueConfig
+from utilities.queue_helpers import enqueue_paper_id_human
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-print(f"Redis URL: {REDIS_URL}")
+#load config at startup; validates required env vars
+config = load_config(SeedHumanQueueConfig)
+print(f"Redis URL: {config.redis_url}")
 
 
 def seed_human_queue_from_file(file_path: str) -> None:
@@ -25,11 +28,5 @@ def seed_human_queue_from_file(file_path: str) -> None:
 
 
 if __name__ == "__main__":
-    # Default: human_papers.txt or fallback to test_papers.txt
-    file_path = os.getenv("HUMAN_PAPERS_FILE", "human_papers.txt")
-    if not os.path.exists(file_path):
-        file_path = "test_papers.txt"
-    if not os.path.exists(file_path):
-        print(f"No file found. Create {file_path} or HUMAN_PAPERS_FILE with paper IDs (one per line).")
-    else:
-        seed_human_queue_from_file(file_path)
+
+    seed_human_queue_from_file(config.human_papers_file)

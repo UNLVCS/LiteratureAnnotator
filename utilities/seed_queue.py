@@ -1,28 +1,32 @@
-import os
+"""
+Seed the paper queue from a file of paper IDs.
+Uses config manager for env vars (validates at startup).
+run from project root with python -m utilites.seed_queue.py
+"""
 import redis
 
-# Import the enqueue_paper_id function from queue_helpers
-from queue_helpers import enqueue_paper_id
+from config.base import load_config
+from config.seed_configs import SeedQueueConfig
+from utilities.queue_helpers import enqueue_paper_id
 
-# Set up Redis connection
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-print(f"Redis URL: {REDIS_URL}")
-r = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+# Load config at startup; validates required env vars
+config = load_config(SeedQueueConfig)
+print(f"Redis URL: {config.redis_url}")
+r = redis.Redis.from_url(config.redis_url, decode_responses=True)
 
-def seed_queue_from_file(file_path):
-    with open(file_path, 'r') as file:
-        for line in file:
+
+def seed_queue_from_file(file_path: str) -> None:
+    """Read paper IDs from file and enqueue for processing."""
+    with open(file_path, "r") as f:
+        for line in f:
             paper_id = line.strip()
-            if paper_id:  # Ensure it's not an empty line
+            if paper_id:
                 success = enqueue_paper_id(paper_id)
                 if success:
                     print(f"Enqueued: {paper_id}")
                 else:
                     print(f"Duplicate or failed to enqueue: {paper_id}")
 
-# Path to your text file containing paper IDs
-# file_path = 'test_papers_mini.txt'  
-file_path = 'test_papers.txt'
-#file_path = 'labeled_paper_ids.txt'
-# file_path = 'completed_papers.txt'
-seed_queue_from_file(file_path)
+
+if __name__ == "__main__":
+    seed_queue_from_file(config.file_path)
