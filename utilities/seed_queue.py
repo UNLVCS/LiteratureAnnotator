@@ -4,7 +4,7 @@ Uses config manager for env vars (validates at startup).
 """
 import redis
 
-from config import load_config
+from config.base import load_config
 from config.seed_configs import SeedQueueConfig
 from utilities.queue_helpers import enqueue_paper_id
 
