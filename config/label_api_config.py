@@ -18,7 +18,7 @@ class LabelApiConfig:
     minio_access_key: Annotated[str, Env("MINIO_ACCESS_KEY"), Default("minioadmin")]
     minio_secret_key: Annotated[str, Env("MINIO_SECRET_KEY"), Default("minioadmin")]
     minio_secure: Annotated[bool, Env("MINIO_SECURE"), Default(False)]
-    minio_bucket: Annotated[str, Env("MINIO_BUCKET"), Default("v4-criteria-classified-articles")]
+    minio_bucket: Annotated[str, Env("MINIO_BUCKET_NAME"), Default("v4-criteria-classified-articles")]
 
     # Label Studio (required by LabellerSDK - no defaults for prod)
     label_studio_url: Annotated[str, Env("LABEL_STUDIO_URL")]

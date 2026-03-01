@@ -1,6 +1,7 @@
 """
 Seed the paper queue from a file of paper IDs.
 Uses config manager for env vars (validates at startup).
+run from project root with python -m utilites.seed_queue.py
 """
 import redis
 

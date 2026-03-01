@@ -14,11 +14,11 @@ class SeedQueueConfig:
     """Config for seed_queue script."""
 
     redis_url: Annotated[str, Env("REDIS_URL"), Default("redis://localhost:6379/0")]
-    file_path: Annotated[str, Env("SEED_QUEUE_FILE"), Default("test_papers.txt")]
+    file_path: Annotated[str, Env("SEED_QUEUE_FILE"), Default("utilities/test_papers.txt")]
 
 @dataclass
 class SeedHumanQueueConfig:
     """Config for seed_human_queue script."""
 
     redis_url: Annotated[str, Env("REDIS_URL"), Default("redis://localhost:6379/0")]
-    human_papers_file: Annotated[str, Env("HUMAN_PAPERS_FILE"), Default("human_papers.txt")]
+    human_papers_file: Annotated[str, Env("HUMAN_PAPERS_FILE"), Default("utilities/human_papers.txt")]
