@@ -7,10 +7,11 @@ Supports only str, bool, int, and float. No Optional: missing value with no defa
 
 import os
 from dataclasses import fields
-from typing import Annotated, Any, get_args, get_origin
+from typing import Annotated, Any, TypeVar, get_args, get_origin
 
 from config.tags import Default, Env
 
+T = TypeVar("T")
 SUPPORTED_TYPES = frozenset({str, bool, int, float})
 
 
@@ -60,10 +61,12 @@ def _parse_to_type(raw: str, typ: type) -> Any:
     raise TypeError(f"Unsupported type: {typ}")
 
 
+# TODO    instead of populating a dataclass, populate an object with function names that retrieve
+# TODO    when called, which allows enviornment variables to be changed after loading
 def load_config(
-    schema_class: type,
+    schema_class: type[T],
     env: dict[str, str] | None = None,
-) -> Any:
+) -> T:
     """
     Load config from environment by introspecting the schema class.
 
