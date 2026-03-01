@@ -1,9 +1,7 @@
 """
 Tag types for config schema definitions.
-Used inside Annotated[type, ...] to specify env names, defaults, and validators.
+Used inside Annotated[type, ...] to specify env names and defaults.
 """
-
-from typing import Callable
 
 
 class Env:
@@ -18,16 +16,3 @@ class Default:
 
     def __init__(self, value: object):
         self.value = value
-
-
-class Required:
-    """Mark field as required (no default)."""
-
-    pass
-
-
-class Coerce:
-    """Custom coercion function: (raw: str) -> T."""
-
-    def __init__(self, fn: Callable[[str], object]):
-        self.fn = fn
