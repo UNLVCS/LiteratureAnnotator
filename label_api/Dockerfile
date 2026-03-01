@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy the application code (context is parent directory)
 COPY label_api/ /app/label_api/
 COPY utilities/ /app/utilities/
+COPY config/ /app/config/
 
 # Create data directories
 RUN mkdir -p /app/data_labeling

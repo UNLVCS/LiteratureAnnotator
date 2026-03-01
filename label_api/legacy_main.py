@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from minio import Minio
 from pydantic import BaseModel
 
-from config import load_config
+from config.base import load_config
 from label_api.config_def import LabelApiConfig
 from label_api.human_import import import_next_human_tasks
 from label_api.human_labeller_sdk import HumanLabellerSDK
