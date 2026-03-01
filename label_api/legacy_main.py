@@ -17,7 +17,7 @@ from minio import Minio
 from pydantic import BaseModel
 
 from config.base import load_config
-from label_api.config_def import LabelApiConfig
+from config.label_api_config import LabelApiConfig
 from label_api.human_import import import_next_human_tasks
 from label_api.human_labeller_sdk import HumanLabellerSDK
 from label_api.lstudio_interfacer_sdk import LabellerSDK
@@ -31,16 +31,16 @@ from utilities.queue_helpers import (
 load_dotenv(find_dotenv(), override=True)
 
 # Load config at startup; validates required env vars
-_label_config = load_config(LabelApiConfig)
+_config = load_config(LabelApiConfig)
 
 # MinIO client configuration (from config)
 client = Minio(
-    _label_config.minio_endpoint,
-    access_key=_label_config.minio_access_key,
-    secret_key=_label_config.minio_secret_key,
-    secure=_label_config.minio_secure,
+    _config.minio_endpoint,
+    access_key=_config.minio_access_key,
+    secret_key=_config.minio_secret_key,
+    secure=_config.minio_secure,
 )
-bucket_name = _label_config.minio_bucket
+bucket_name = _config.minio_bucket
 
 # Scheduler for background tasks
 scheduler = BackgroundScheduler()
@@ -70,12 +70,12 @@ scheduler = BackgroundScheduler()
 
 
 LS = LabellerSDK(
-    base_url=_label_config.label_studio_url or None,
-    api_key=_label_config.label_studio_api_key or None,
+    base_url=_config.label_studio_url or None,
+    api_key=_config.label_studio_api_key or None,
 )
 LS_Human = HumanLabellerSDK(
-    base_url=_label_config.label_studio_url or None,
-    api_key=_label_config.label_studio_api_key or None,
+    base_url=_config.label_studio_url or None,
+    api_key=_config.label_studio_api_key or None,
 )
 app = FastAPI()
 
@@ -89,7 +89,7 @@ async def startup_event():
 
     # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
     # This ensures tasks are loaded even if the project already exists
-    webhook_url = f"{_label_config.webhook_host}/webhook"
+    webhook_url = f"{_config.webhook_host}/webhook"
     LS.create_webhook(endpoint=webhook_url)
     LS_Human.create_webhook(endpoint=webhook_url)
 
@@ -364,11 +364,11 @@ def import_next_paper_tasks(project_id: int) -> None:
 def _ensure_annotations_bucket():
     """Create the annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(_label_config.annotations_bucket):
-            client.make_bucket(_label_config.annotations_bucket)
-            print(f"Created bucket: {_label_config.annotations_bucket}")
+        if not client.bucket_exists(_config.annotations_bucket):
+            client.make_bucket(_config.annotations_bucket)
+            print(f"Created bucket: {_config.annotations_bucket}")
     except Exception as e:
-        print(f"Error checking/creating bucket {_label_config.annotations_bucket}: {e}")
+        print(f"Error checking/creating bucket {_config.annotations_bucket}: {e}")
 
 def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
     """Save completed annotation to MinIO bucket."""
@@ -394,13 +394,13 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
     try:
         _ensure_annotations_bucket()
         client.put_object(
-            bucket_name=_label_config.annotations_bucket,
+            bucket_name=_config.annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json"
         )
-        print(f"Saved annotation to MinIO: {_label_config.annotations_bucket}/{object_name}")
+        print(f"Saved annotation to MinIO: {_config.annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving annotation to MinIO: {e}")
         raise
@@ -409,11 +409,11 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
 def _ensure_human_annotations_bucket():
     """Create the human annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(_label_config.human_annotations_bucket):
-            client.make_bucket(_label_config.human_annotations_bucket)
-            print(f"Created bucket: {_label_config.human_annotations_bucket}")
+        if not client.bucket_exists(_config.human_annotations_bucket):
+            client.make_bucket(_config.human_annotations_bucket)
+            print(f"Created bucket: {_config.human_annotations_bucket}")
     except Exception as e:
-        print(f"Error checking/creating bucket {_label_config.human_annotations_bucket}: {e}")
+        print(f"Error checking/creating bucket {_config.human_annotations_bucket}: {e}")
 
 
 def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
@@ -435,13 +435,13 @@ def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]
     try:
         _ensure_human_annotations_bucket()
         client.put_object(
-            bucket_name=_label_config.human_annotations_bucket,
+            bucket_name=_config.human_annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json",
         )
-        print(f"Saved human annotation to MinIO: {_label_config.human_annotations_bucket}/{object_name}")
+        print(f"Saved human annotation to MinIO: {_config.human_annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving human annotation to MinIO: {e}")
         raise
