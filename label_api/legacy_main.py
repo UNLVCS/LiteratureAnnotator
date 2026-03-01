@@ -33,14 +33,18 @@ load_dotenv(find_dotenv(), override=True)
 # Load config at startup; validates required env vars
 _config = load_config(LabelApiConfig)
 
-# MinIO client configuration (from config)
-client = Minio(
-    _config.minio_endpoint,
-    access_key=_config.minio_access_key,
-    secret_key=_config.minio_secret_key,
-    secure=_config.minio_secure,
-)
-bucket_name = _config.minio_bucket
+
+def _minio_client(config: LabelApiConfig) -> Minio:
+    """Build Minio client from config."""
+    return Minio(
+        config.minio_endpoint,
+        access_key=config.minio_access_key,
+        secret_key=config.minio_secret_key,
+        secure=config.minio_secure,
+    )
+
+
+client = _minio_client(_config)
 
 # Scheduler for background tasks
 scheduler = BackgroundScheduler()
@@ -69,14 +73,8 @@ scheduler = BackgroundScheduler()
 # ]
 
 
-LS = LabellerSDK(
-    base_url=_config.label_studio_url or None,
-    api_key=_config.label_studio_api_key or None,
-)
-LS_Human = HumanLabellerSDK(
-    base_url=_config.label_studio_url or None,
-    api_key=_config.label_studio_api_key or None,
-)
+LS = LabellerSDK(_config)
+LS_Human = HumanLabellerSDK(_config)
 app = FastAPI()
 
 @app.get("/health")
@@ -238,7 +236,7 @@ def import_next_paper_tasks(project_id: int) -> None:
         for provider in providers:
             try:
                 object_name = f"{provider}/{paper_id}.json"
-                response = client.get_object(bucket_name = bucket_name, object_name = object_name)
+                response = client.get_object(bucket_name=_config.minio_bucket, object_name=object_name)
                 data = response.data.decode('utf-8') 
                 paper_data = json.loads(data) 
                 print(f"Paper data for {provider}")
