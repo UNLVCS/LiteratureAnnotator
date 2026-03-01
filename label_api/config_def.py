@@ -21,8 +21,8 @@ class LabelApiConfig:
     minio_bucket: Annotated[str, Env("MINIO_BUCKET"), Default("v4-criteria-classified-articles")]
 
     # Label Studio (required by LabellerSDK - no defaults for prod)
-    label_studio_url: Annotated[str, Env("LABEL_STUDIO_URL"), Default("")]
-    label_studio_api_key: Annotated[str, Env("LABEL_STUDIO_API_KEY"), Default("")]
+    label_studio_url: Annotated[str, Env("LABEL_STUDIO_URL")]
+    label_studio_api_key: Annotated[str, Env("LABEL_STUDIO_API_KEY")]
 
     # Webhook & buckets
     webhook_host: Annotated[str, Env("WEBHOOK_HOST"), Default("http://localhost:8000")]
