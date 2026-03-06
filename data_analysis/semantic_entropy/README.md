@@ -5,7 +5,7 @@ A lower score indicates higher confidence in model's generated data. A higher sc
 
 
 
-$$H = -\,\sum_{i=1}^{k} \: p_i' \:\log\bigl(\,p_i'\,\bigr)$$
+$$H = -\sum_{i=1}^{k}  p_i' \log\bigl(p_i'\bigr)$$
 
 
 ## Steps
@@ -27,6 +27,6 @@ $$H = -\,\sum_{i=1}^{k} \: p_i' \:\log\bigl(\,p_i'\,\bigr)$$
 ### Semantic Entropy
 * Using the standard **Shannon Entropy** formula we calculate the certainty or confusion of the model.
 
-$$H = -\,\sum_{i=1}^{k} \: P(c_i) \:\log\bigl(\,P(c_i)\,\bigr)$$
+$$H = -\sum_{i=1}^{k}  P(c_i) \log\bigl(P(c_i)\bigr)$$
 
 * Decide on a threshold to decide if the model is hallucinating or not. This is something that can and should be tuned later on. For example, Low Entropy can be entropy values <0.5 and will be flagged as acceptable and high entropy can be >0.5 and will be flagged as hallucinating.
