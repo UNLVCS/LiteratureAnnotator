@@ -11,7 +11,8 @@ from llm_providers.openai_provider import OpenAIProvider
 from llm_providers.anthropic_provider import AnthropicProvider
 from llm_providers.huggingface_provider import HuggingFaceProvider
 from llm_providers.ollama_provider import OllamaProvider
-from llm_provider.vllm_provider import VLLMProvider
+from llm_providers.vllm_provider import VLLMProvider
+from llm_providers.vllm_native_provider import VLLMNativeProvider
 from dotenv import load_dotenv, find_dotenv
 
 from langchain_openai import OpenAIEmbeddings
@@ -138,6 +139,8 @@ class SampleGenerator:
                     self.providers[model['model']] = HuggingFaceProvider(**model)
                 elif provider == "vllm":
                     self.providers[model['model']] = VLLMProvider(**model)
+                elif provider == "vllm_native":
+                    self.providers[model['model']] = VLLMNativeProvider(**model)
                 elif provider == "ollama":
                     try:
                         temp = OllamaProvider(**model)

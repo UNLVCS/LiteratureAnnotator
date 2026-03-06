@@ -32,6 +32,16 @@
             "skip": false
         }
     ],
+    "vllm_native": [
+        {
+            "model": "",
+            "api_key": "EMPTY",
+            "tensor_parallel_size": 2,
+            "dtype": "auto",
+            "gpu_memory_utilization": 0.90,
+            "skip": false
+        }
+    ],
     "ollama": [
         {
             "api_key": "dummy",
