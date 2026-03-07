@@ -3,27 +3,53 @@ Queue-related config schema.
 Used by utilities.queue_helpers and seed scripts.
 """
 
-from dataclasses import dataclass
-from typing import Annotated
-
-from config.tags import Default, Env
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass
-class QueueConfig:
+class QueueConfig(BaseSettings):
     """Config for Redis queues and annotation persistence."""
 
-    redis_url: Annotated[str, Env("REDIS_URL"), Default("redis://localhost:6379/0")]
-    paper_queue: Annotated[str, Env("PAPER_QUEUE"), Default("q:papers:v1")]
-    paper_processing: Annotated[str, Env("PAPER_PROCESSING"), Default("q:papers:processing:v1")]
-    paper_dedup_set: Annotated[str, Env("PAPER_DEDUP_SET"), Default("s:papers:enqueued:v1")]
-    ann_queue: Annotated[str, Env("ANN_QUEUE"), Default("q:annotations:completed:v1")]
-    completed_papers_queue: Annotated[str, Env("COMPLETED_PAPERS_QUEUE"), Default("q:papers:completed:v1")]
-    generated_set: Annotated[str, Env("GENERATED_SET"), Default("s:papers:generated:v1")]
-    ann_flush_threshold: Annotated[int, Env("ANN_FLUSH_THRESHOLD"), Default(1000)]
-    ann_persist_path: Annotated[str, Env("ANN_PERSIST_PATH"), Default("data_labeling/annotations.jsonl")]
-    ann_flush_on_exit: Annotated[bool, Env("ANN_FLUSH_ON_EXIT"), Default(True)]
-    ann_install_signal_handlers: Annotated[bool, Env("ANN_INSTALL_SIGNAL_HANDLERS"), Default(True)]
-    HUMAN_PAPER_QUEUE: Annotated[str, Env("HUMAN_PAPER_QUEUE"), Default('q:papers:human:v1')]
-    HUMAN_PROCESSING_Q: Annotated[str, Env("HUMAN_PROCESSING_Q"), Default('q:papers:human:processing:v1')]
-    HUMAN_DEDUP_SET: Annotated[str, Env("HUMAN_DEDUP_SET"), Default('s:papers:human:enqueued:v1')]
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+    paper_queue: str = Field(default="q:papers:v1", validation_alias="PAPER_QUEUE")
+    paper_processing: str = Field(
+        default="q:papers:processing:v1",
+        validation_alias="PAPER_PROCESSING",
+    )
+    paper_dedup_set: str = Field(
+        default="s:papers:enqueued:v1",
+        validation_alias="PAPER_DEDUP_SET",
+    )
+    ann_queue: str = Field(
+        default="q:annotations:completed:v1",
+        validation_alias="ANN_QUEUE",
+    )
+    completed_papers_queue: str = Field(
+        default="q:papers:completed:v1",
+        validation_alias="COMPLETED_PAPERS_QUEUE",
+    )
+    generated_set: str = Field(default="s:papers:generated:v1", validation_alias="GENERATED_SET")
+    ann_flush_threshold: int = Field(default=1000, validation_alias="ANN_FLUSH_THRESHOLD")
+    ann_persist_path: str = Field(
+        default="data_labeling/annotations.jsonl",
+        validation_alias="ANN_PERSIST_PATH",
+    )
+    ann_flush_on_exit: bool = Field(default=True, validation_alias="ANN_FLUSH_ON_EXIT")
+    ann_install_signal_handlers: bool = Field(
+        default=True,
+        validation_alias="ANN_INSTALL_SIGNAL_HANDLERS",
+    )
+    HUMAN_PAPER_QUEUE: str = Field(
+        default="q:papers:human:v1",
+        validation_alias="HUMAN_PAPER_QUEUE",
+    )
+    HUMAN_PROCESSING_Q: str = Field(
+        default="q:papers:human:processing:v1",
+        validation_alias="HUMAN_PROCESSING_Q",
+    )
+    HUMAN_DEDUP_SET: str = Field(
+        default="s:papers:human:enqueued:v1",
+        validation_alias="HUMAN_DEDUP_SET",
+    )

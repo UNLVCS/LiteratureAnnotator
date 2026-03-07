@@ -3,28 +3,36 @@ Config schema for the label API service.
 Loads MinIO, Label Studio, and webhook-related env vars.
 """
 
-from dataclasses import dataclass
-from typing import Annotated
-
-from config.tags import Default, Env
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass
-class LabelApiConfig:
+class LabelApiConfig(BaseSettings):
     """Config for the label API (legacy_main)."""
 
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
     # MinIO
-    minio_endpoint: Annotated[str, Env("MINIO_ENDPOINT"), Default("localhost:9000")]
-    minio_access_key: Annotated[str, Env("MINIO_ACCESS_KEY"), Default("minioadmin")]
-    minio_secret_key: Annotated[str, Env("MINIO_SECRET_KEY"), Default("minioadmin")]
-    minio_secure: Annotated[bool, Env("MINIO_SECURE"), Default(False)]
-    minio_bucket: Annotated[str, Env("MINIO_BUCKET_NAME"), Default("v4-criteria-classified-articles")]
+    minio_endpoint: str = Field(default="localhost:9000", validation_alias="MINIO_ENDPOINT")
+    minio_access_key: str = Field(default="minioadmin", validation_alias="MINIO_ACCESS_KEY")
+    minio_secret_key: str = Field(default="minioadmin", validation_alias="MINIO_SECRET_KEY")
+    minio_secure: bool = Field(default=False, validation_alias="MINIO_SECURE")
+    minio_bucket: str = Field(
+        default="v4-criteria-classified-articles",
+        validation_alias="MINIO_BUCKET_NAME",
+    )
 
     # Label Studio (required by LabellerSDK - no defaults for prod)
-    label_studio_url: Annotated[str, Env("LABEL_STUDIO_URL")]
-    label_studio_api_key: Annotated[str, Env("LABEL_STUDIO_API_KEY")]
+    label_studio_url: str = Field(..., validation_alias="LABEL_STUDIO_URL")
+    label_studio_api_key: str = Field(..., validation_alias="LABEL_STUDIO_API_KEY")
 
     # Webhook & buckets
-    webhook_host: Annotated[str, Env("WEBHOOK_HOST"), Default("http://localhost:8000")]
-    annotations_bucket: Annotated[str, Env("ANNOTATIONS_BUCKET"), Default("completed-annotations")]
-    human_annotations_bucket: Annotated[str, Env("HUMAN_ANNOTATIONS_BUCKET"), Default("human-annotations")]
+    webhook_host: str = Field(default="http://localhost:8000", validation_alias="WEBHOOK_HOST")
+    annotations_bucket: str = Field(
+        default="completed-annotations",
+        validation_alias="ANNOTATIONS_BUCKET",
+    )
+    human_annotations_bucket: str = Field(
+        default="human-annotations",
+        validation_alias="HUMAN_ANNOTATIONS_BUCKET",
+    )

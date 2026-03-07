@@ -3,22 +3,29 @@ Config schemas for seed scripts.
 Each seed script (seed_queue, seed_human_queue) loads only the vars it needs.
 """
 
-from dataclasses import dataclass
-from typing import Annotated
-
-from config.tags import Default, Env
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-@dataclass
-class SeedQueueConfig:
+class SeedQueueConfig(BaseSettings):
     """Config for seed_queue script."""
 
-    redis_url: Annotated[str, Env("REDIS_URL"), Default("redis://localhost:6379/0")]
-    file_path: Annotated[str, Env("SEED_QUEUE_FILE"), Default("utilities/test_papers.txt")]
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-@dataclass
-class SeedHumanQueueConfig:
+    redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+    file_path: str = Field(
+        default="utilities/test_papers.txt",
+        validation_alias="SEED_QUEUE_FILE",
+    )
+
+
+class SeedHumanQueueConfig(BaseSettings):
     """Config for seed_human_queue script."""
 
-    redis_url: Annotated[str, Env("REDIS_URL"), Default("redis://localhost:6379/0")]
-    human_papers_file: Annotated[str, Env("HUMAN_PAPERS_FILE"), Default("utilities/human_papers.txt")]
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    redis_url: str = Field(default="redis://localhost:6379/0", validation_alias="REDIS_URL")
+    human_papers_file: str = Field(
+        default="utilities/human_papers.txt",
+        validation_alias="HUMAN_PAPERS_FILE",
+    )
