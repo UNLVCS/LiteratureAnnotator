@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class LabelApiConfig(BaseSettings):
     """Config for the label API (legacy_main)."""
 
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # MinIO
