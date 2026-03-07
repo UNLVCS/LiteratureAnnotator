@@ -1,44 +1,50 @@
 from __future__ import annotations
 
-from fastapi import FastAPI, Request, BackgroundTasks 
-from pydantic import BaseModel
-from label_api.lstudio_interfacer_sdk import LabellerSDK
-from label_api.human_labeller_sdk import HumanLabellerSDK
-from label_api.human_import import import_next_human_tasks
+import html
 # from label_api.lstudio_interfacer import Labeller
-from langchain_openai import ChatOpenAI 
-from langchain_core.prompts import ChatPromptTemplate
-# from langchain.chains import RetrievalQA 
+# from langchain.chains import RetrievalQA
 # from langchain import hub
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
 # from utilities.vector_db import VectorDb
 import json
-import html
-from typing import Any, Dict, Optional, Tuple   
-from apscheduler.schedulers.background import BackgroundScheduler
-import os
- 
-# Queue helpers (use these instead of any local Redis calls)
-from utilities.queue_helpers import (
-    enqueue_paper_id,
-    pop_paper_id,             # simple pattern
-    claim_next_paper,         # safer pattern (claim + ack/requeue)
-    ack_paper,
-    requeue_inflight,
-    claim_next_paper_from_set
-)
 from datetime import datetime
-from io import BytesIO 
+from io import BytesIO
+from typing import Any, Dict, Optional, Tuple
+
+from apscheduler.schedulers.background import BackgroundScheduler
+from dotenv import load_dotenv, find_dotenv
+from fastapi import FastAPI, Request, BackgroundTasks
 from minio import Minio
-# MinIO client configuration (uses env vars for Docker compatibility)
-client = Minio(
-    os.getenv("MINIO_ENDPOINT", "localhost:9000"),
-    access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
-    secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
-    secure=os.getenv("MINIO_SECURE", "false").lower() == "true"
+from pydantic import BaseModel
+
+from config.base import load_config
+from config.label_api_config import LabelApiConfig
+from label_api.human_import import import_next_human_tasks
+from label_api.human_labeller_sdk import HumanLabellerSDK
+from label_api.lstudio_interfacer_sdk import LabellerSDK
+from utilities.queue_helpers import (
+    ack_paper,
+    claim_next_paper,
+    pop_paper_id,
+    requeue_inflight,
 )
-bucket_name = os.getenv("MINIO_BUCKET_NAME", "v4-criteria-classified-articles")
+
+load_dotenv(find_dotenv(), override=True)
+
+# Load config at startup; validates required env vars
+_config = load_config(LabelApiConfig)
+
+
+def _minio_client(config: LabelApiConfig) -> Minio:
+    """Build Minio client from config."""
+    return Minio(
+        config.minio_endpoint,
+        access_key=config.minio_access_key,
+        secret_key=config.minio_secret_key,
+        secure=config.minio_secure,
+    )
+
+
+client = _minio_client(_config)
 
 # Scheduler for background tasks
 scheduler = BackgroundScheduler()
@@ -67,8 +73,8 @@ scheduler = BackgroundScheduler()
 # ]
 
 
-LS = LabellerSDK()
-LS_Human = HumanLabellerSDK()
+LS = LabellerSDK(_config)
+LS_Human = HumanLabellerSDK(_config)
 app = FastAPI()
 
 @app.get("/health")
@@ -78,8 +84,10 @@ async def health_check():
 
 @app.on_event("startup")
 async def startup_event():
-    webhook_host = os.getenv("WEBHOOK_HOST", "http://localhost:8000")
-    webhook_url = f"{webhook_host}/webhook"
+
+    # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
+    # This ensures tasks are loaded even if the project already exists
+    webhook_url = f"{_config.webhook_host}/webhook"
     LS.create_webhook(endpoint=webhook_url)
     LS_Human.create_webhook(endpoint=webhook_url)
 
@@ -114,6 +122,8 @@ async def ls_webhook(req: Request, bg: BackgroundTasks):
     print("==========================================")
     print("WEBHOOK RECEIVED: ", action, "project_id:", proj_id)
     print("==========================================")
+    # print(payload.get("event", "no_event"))
+
 
     if action == "PROJECT_CREATED":
         if proj_id == LS_Human.project_id:
@@ -179,7 +189,7 @@ def periodic_paper_check():
         print(f"[Periodic Paper Check] New tasks: {new_count}")
 
         if new_count < 5:
-            print("[Periodic Paper Check] Importing next paper")
+            print("[Periodic Paper Check] No new tasks found, importing next paper")
             import_next_paper_tasks(LS.project_id)
     except Exception as e:
         print(f"[Periodic Paper Check] Error: {e}")
@@ -226,7 +236,7 @@ def import_next_paper_tasks(project_id: int) -> None:
         for provider in providers:
             try:
                 object_name = f"{provider}/{paper_id}.json"
-                response = client.get_object(bucket_name = bucket_name, object_name = object_name)
+                response = client.get_object(bucket_name=_config.minio_bucket, object_name=object_name)
                 data = response.data.decode('utf-8') 
                 paper_data = json.loads(data) 
                 print(f"Paper data for {provider}")
@@ -348,18 +358,15 @@ def import_next_paper_tasks(project_id: int) -> None:
 # --------------------
 
 # MinIO bucket for completed annotations
-ANNOTATIONS_BUCKET = os.getenv("ANNOTATIONS_BUCKET", "completed-annotations")
-HUMAN_ANNOTATIONS_BUCKET = os.getenv("HUMAN_ANNOTATIONS_BUCKET", "human-annotations")
-
 
 def _ensure_annotations_bucket():
     """Create the annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(ANNOTATIONS_BUCKET):
-            client.make_bucket(ANNOTATIONS_BUCKET)
-            print(f"Created bucket: {ANNOTATIONS_BUCKET}")
+        if not client.bucket_exists(_config.annotations_bucket):
+            client.make_bucket(_config.annotations_bucket)
+            print(f"Created bucket: {_config.annotations_bucket}")
     except Exception as e:
-        print(f"Error checking/creating bucket {ANNOTATIONS_BUCKET}: {e}")
+        print(f"Error checking/creating bucket {_config.annotations_bucket}: {e}")
 
 def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
     """Save completed annotation to MinIO bucket."""
@@ -385,13 +392,13 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
     try:
         _ensure_annotations_bucket()
         client.put_object(
-            bucket_name=ANNOTATIONS_BUCKET,
+            bucket_name=_config.annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json"
         )
-        print(f"Saved annotation to MinIO: {ANNOTATIONS_BUCKET}/{object_name}")
+        print(f"Saved annotation to MinIO: {_config.annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving annotation to MinIO: {e}")
         raise
@@ -400,11 +407,11 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
 def _ensure_human_annotations_bucket():
     """Create the human annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(HUMAN_ANNOTATIONS_BUCKET):
-            client.make_bucket(HUMAN_ANNOTATIONS_BUCKET)
-            print(f"Created bucket: {HUMAN_ANNOTATIONS_BUCKET}")
+        if not client.bucket_exists(_config.human_annotations_bucket):
+            client.make_bucket(_config.human_annotations_bucket)
+            print(f"Created bucket: {_config.human_annotations_bucket}")
     except Exception as e:
-        print(f"Error checking/creating bucket {HUMAN_ANNOTATIONS_BUCKET}: {e}")
+        print(f"Error checking/creating bucket {_config.human_annotations_bucket}: {e}")
 
 
 def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
@@ -426,13 +433,13 @@ def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]
     try:
         _ensure_human_annotations_bucket()
         client.put_object(
-            bucket_name=HUMAN_ANNOTATIONS_BUCKET,
+            bucket_name=_config.human_annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json",
         )
-        print(f"Saved human annotation to MinIO: {HUMAN_ANNOTATIONS_BUCKET}/{object_name}")
+        print(f"Saved human annotation to MinIO: {_config.human_annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving human annotation to MinIO: {e}")
         raise

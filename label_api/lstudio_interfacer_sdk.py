@@ -1,10 +1,15 @@
 import os
 import json
-from typing import List, Dict, Any, Optional
-
-from dotenv import load_dotenv
+from typing import List, Dict, Any, Optional, Protocol
 
 from label_studio_sdk.client import LabelStudio
+
+
+class LabelStudioConfig(Protocol):
+    """Protocol for config objects that provide Label Studio URL and API key."""
+
+    label_studio_url: str
+    label_studio_api_key: str
 
 
 class LabellerSDK:
@@ -18,12 +23,10 @@ class LabellerSDK:
     - Create webhooks with configured actions
     """
 
-    def __init__(self):
-        load_dotenv()
-
+    def __init__(self, config: LabelStudioConfig):
         self.client = LabelStudio(
-            base_url=os.getenv("LABEL_STUDIO_URL"),
-            api_key=os.getenv("LABEL_STUDIO_API_KEY"),
+            base_url=config.label_studio_url or None,
+            api_key=config.label_studio_api_key or None,
         )
 
         # Load XML label config from file co-located with this module by default

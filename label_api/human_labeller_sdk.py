@@ -3,13 +3,13 @@ Label Studio SDK for the Human Labeling Project.
 Users make classification decisions directly from chunks (no LLM pre-labeling).
 """
 
-import os
 import json
+import os
 from typing import List, Dict, Any, Optional
 
-from dotenv import load_dotenv
-
 from label_studio_sdk.client import LabelStudio
+
+from label_api.lstudio_interfacer_sdk import LabelStudioConfig
 
 
 class HumanLabellerSDK:
@@ -20,12 +20,10 @@ class HumanLabellerSDK:
     - Config: human_label_interface_config.xml
     """
 
-    def __init__(self):
-        load_dotenv()
-
+    def __init__(self, config: LabelStudioConfig):
         self.client = LabelStudio(
-            base_url=os.getenv("LABEL_STUDIO_URL"),
-            api_key=os.getenv("LABEL_STUDIO_API_KEY"),
+            base_url=config.label_studio_url or None,
+            api_key=config.label_studio_api_key or None,
         )
 
         config_path = os.path.join(os.path.dirname(__file__), "human_label_interface_config.xml")
