@@ -5,12 +5,12 @@ run from project root with python -m utilites.seed_queue.py
 """
 import redis
 
-from config.base import load_config
+from config.base import load_config_from_env
 from config.seed_configs import SeedQueueConfig
 from utilities.queue_helpers import enqueue_paper_id
 
 # Load config at startup; validates required env vars
-config = load_config(SeedQueueConfig)
+config = load_config_from_env(SeedQueueConfig)
 print(f"Redis URL: {config.redis_url}")
 r = redis.Redis.from_url(config.redis_url, decode_responses=True)
 

@@ -5,12 +5,12 @@ Paper IDs must exist in Pinecone (chunked via data_label.py).
 
 import os
 
-from config import load_config
+from config import load_config_from_env
 from config.seed_configs import SeedHumanQueueConfig
 from utilities.queue_helpers import enqueue_paper_id_human
 
 #load config at startup; validates required env vars
-config = load_config(SeedHumanQueueConfig)
+config = load_config_from_env(SeedHumanQueueConfig)
 print(f"Redis URL: {config.redis_url}")
 
 

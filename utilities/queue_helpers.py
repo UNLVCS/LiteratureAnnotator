@@ -8,13 +8,13 @@ from typing import Optional
 
 from dotenv import load_dotenv, find_dotenv
 
-from config import load_config
+from config import load_config_from_env
 from config.queue_config import QueueConfig
 
 load_dotenv(find_dotenv(), override=True)
 
 # Load config at module init; validates required env vars at startup
-_queue_config = load_config(QueueConfig)
+_queue_config = load_config_from_env(QueueConfig)
 
 # Guard against concurrent or re-entrant flushes (e.g., signal + atexit)
 _flush_lock = threading.Lock()

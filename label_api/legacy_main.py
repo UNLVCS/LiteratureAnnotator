@@ -16,7 +16,7 @@ from fastapi import FastAPI, Request, BackgroundTasks
 from minio import Minio
 from pydantic import BaseModel
 
-from config.base import load_config
+from config.base import load_config_from_env
 from config.label_api_config import LabelApiConfig
 from label_api.human_import import import_next_human_tasks
 from label_api.human_labeller_sdk import HumanLabellerSDK
@@ -31,7 +31,7 @@ from utilities.queue_helpers import (
 load_dotenv(find_dotenv(), override=True)
 
 # Load config at startup; validates required env vars
-_config = load_config(LabelApiConfig)
+_config = load_config_from_env(LabelApiConfig)
 
 
 def _minio_client(config: LabelApiConfig) -> Minio:
