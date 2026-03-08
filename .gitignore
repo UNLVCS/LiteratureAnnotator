@@ -5,6 +5,7 @@ ignore_me
 *.ipynb
 **/*.ipynb
 .env
+llm_providers/examples/llm_params_example.yaml
 llm_params*.json
 data_labeling
 .vscode

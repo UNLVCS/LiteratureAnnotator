@@ -4,7 +4,7 @@ Hugging Face provider implementation using LangChain
 
 from typing import List, Dict, Any, Optional
 from langchain_huggingface import HuggingFacePipeline, ChatHuggingFace
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from .base import BaseLLMProvider, Query, LLMResponse
 
 

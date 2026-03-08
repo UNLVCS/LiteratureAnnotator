@@ -73,7 +73,7 @@ _vector_store = None
 _vdb = None
 _prompt = None
 _criteria_prompts = None
-_providers = {}
+_providers: Dict[str, BaseLLMProvider] = {}
 
 def initialize_shared_resources():
     """Initialize shared resources globally"""
@@ -161,11 +161,10 @@ def initialize_shared_resources():
 def setup_providers(provider_configs: Dict[str, Dict[str, Any]]):
     """Setup LLM providers based on configuration"""
     global _providers
-    
+
     for provider, models in provider_configs.items():
         for model in models:
-            # print(type(model))
-            if model['skip']: 
+            if model['skip']:
                 continue
             if provider != "ollama" and not model.get("api_key"):
                 print(f"Skipping {model['model']} - no API key found")
@@ -422,12 +421,12 @@ def worker_process(provider_name: str, provider_config: BaseLLMProvider,
 def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = None, provider_configs: Dict[str, Any] = None) -> List[Dict[str, Any]]:
     """
     Process papers using multiprocessing with one worker per provider
-    
+
     Args:
         num_papers: Total number of papers to process across ALL providers (not per provider)
         providers: List of provider names to use (defaults to all available)
         provider_configs: Original provider configurations
-        
+
     Returns:
         List of results for all processed papers (num_papers results, one per paper-provider combination)
     """
@@ -605,7 +604,7 @@ def main():
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     with open(os.path.join(root_dir, "llm_params/llm_params3.json")) as f:
         provider_configs = json.load(f)
-    
+
     # Initialize shared resources
     initialize_shared_resources()
     setup_providers(provider_configs)

@@ -36,3 +36,16 @@ def load_config_from_yaml_file(schema_class: type[T], yaml_file_path: str | Path
     if data is None:
         data = {}
     return schema_class.model_validate(data)
+
+
+def load_config_from_json_file(schema_class: type[T], json_file_path: str | Path) -> T:
+    """
+    Load config from a JSON file and validate with the given Pydantic model.
+    """
+    import json
+
+    with open(json_file_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if data is None:
+        data = {}
+    return schema_class.model_validate(data)

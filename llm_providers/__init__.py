@@ -6,6 +6,7 @@ using LangChain as the underlying framework.
 """
 
 from .base import BaseLLMProvider, Query, LLMResponse
+from .config_models import LLMModelConfig, LLMProviderConfig, LLMProvidersConfig
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
 from .huggingface_provider import HuggingFaceProvider
@@ -16,6 +17,9 @@ __all__ = [
     'BaseLLMProvider',
     'Query',
     'LLMResponse',
+    'LLMModelConfig',
+    'LLMProviderConfig',
+    'LLMProvidersConfig',
     'OpenAIProvider',
     'AnthropicProvider',
     'HuggingFaceProvider',
