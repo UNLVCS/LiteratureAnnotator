@@ -25,7 +25,7 @@ def main():
         return
     providers: Dict[str, BaseLLMProvider] = load_config_from_yaml_file(
         LLMProvidersConfig, config_path
-    ).to_dict()
+    ).get_providers_dict()
 
     if not providers:
         print("No providers available. Check config and API keys.")

@@ -65,7 +65,7 @@ class LLMProvidersConfig(RootModel[Dict[str, LLMProviderConfig]]):
         """Return the provider name -> config map (raw config, not instances)."""
         return self.root
 
-    def to_dict(self) -> "Dict[str, BaseLLMProvider]":
+    def get_providers_dict(self) -> "Dict[str, BaseLLMProvider]":
         """Instantiate providers and return model name -> provider map."""
         from .anthropic_provider import AnthropicProvider
         from .base import BaseLLMProvider
