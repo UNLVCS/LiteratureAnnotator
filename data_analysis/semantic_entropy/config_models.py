@@ -1,9 +1,9 @@
 """
 Pydantic config models for generate_samples.py.
-Combines LLM provider config with Minio settings.
+Combines LLM provider config with Minio, Pinecone, and Redis settings.
 """
 
-from typing import Dict
+from typing import Dict, Optional
 
 from pydantic import BaseModel
 
@@ -23,6 +23,31 @@ class MinioConfig(BaseModel):
     secure: bool = False
 
 
+class PineconeConfig(BaseModel):
+    """Pinecone vector store configuration."""
+
+    api_key: str
+    index_name: str = "adbm"
+    namespace: str = "article_upload_test_2"
+
+
+class RedisConfig(BaseModel):
+    """Redis configuration for paper queues."""
+
+    url: str = "redis://localhost:6379/0"
+    paper_queue: str = "q:papers:v1"
+    paper_processing: str = "q:papers:processing:v1"
+    paper_dedup_set: str = "s:papers:enqueued:v1"
+    generated_set: str = "s:papers:generated:v1"
+
+
+class EmbeddingsConfig(BaseModel):
+    """OpenAI embeddings configuration."""
+
+    api_key: str
+    model: str = "text-embedding-ada-002"
+
+
 class GenerateSamplesConfig(LLMProvidersDictMixin, BaseModel):
     """
     Combined config for generate_samples.py.
@@ -30,6 +55,9 @@ class GenerateSamplesConfig(LLMProvidersDictMixin, BaseModel):
     """
 
     minio: MinioConfig
+    pinecone: PineconeConfig
+    redis: RedisConfig
+    embeddings: EmbeddingsConfig
     llm_providers: Dict[str, LLMProviderConfig]
 
     def _get_providers_config(self) -> Dict[str, LLMProviderConfig]:

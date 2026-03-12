@@ -4,24 +4,24 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from minio import Minio
+from pinecone import Pinecone
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
 
 from config import load_config_from_yaml_file
+from config.queue_config import QueueConfig
 from data_generation.response_standardizer import standardize_llm_response
 from llm_providers.base import BaseLLMProvider, Query, LLMResponse
-from utilities.vector_db import VectorDb
-from utilities.queue_helpers import (
-    claim_next_paper,
-    ack_paper,
-    paper_queue_len,
-    push_completed_paper,
-    completed_papers_count,
-    export_completed_papers_to_file
-)
+from utilities.queue_helpers import PaperQueue
 
-from data_analysis.semantic_entropy.config_models import GenerateSamplesConfig, MinioConfig
+from data_analysis.semantic_entropy.config_models import (
+    GenerateSamplesConfig,
+    MinioConfig,
+    PineconeConfig,
+    RedisConfig,
+    EmbeddingsConfig,
+)
 
 
 class RAGLabelingGenerator:
@@ -29,13 +29,23 @@ class RAGLabelingGenerator:
     RAG-based labeling generator that uses multiple LLM providers
     """
     
-    def __init__(self, providers: Dict[str, BaseLLMProvider], minio_config: MinioConfig):
+    def __init__(
+        self,
+        providers: Dict[str, BaseLLMProvider],
+        minio_config: MinioConfig,
+        pinecone_config: PineconeConfig,
+        redis_config: RedisConfig,
+        embeddings_config: EmbeddingsConfig,
+    ):
         """
         Initialize the RAG labeling generator
         
         Args:
             providers: Dictionary mapping model names to provider instances
             minio_config: Minio configuration
+            pinecone_config: Pinecone vector store configuration
+            redis_config: Redis queue configuration
+            embeddings_config: OpenAI embeddings configuration
         """
         self.providers = providers
         
@@ -53,13 +63,28 @@ class RAGLabelingGenerator:
         else:
             print(f"Bucket {self.bucket_name} already exists.")
         
-        # Setup vector store and embeddings
-        self.vdb = VectorDb()
-        self.embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
+        # Setup paper queue with config
+        queue_config = QueueConfig(
+            redis_url=redis_config.url,
+            paper_queue=redis_config.paper_queue,
+            paper_processing=redis_config.paper_processing,
+            paper_dedup_set=redis_config.paper_dedup_set,
+            generated_set=redis_config.generated_set,
+        )
+        self.queue = PaperQueue(queue_config)
+        
+        # Setup Pinecone and vector store
+        pc = Pinecone(api_key=pinecone_config.api_key)
+        pinecone_index = pc.Index(pinecone_config.index_name)
+        
+        self.embedder = OpenAIEmbeddings(
+            model=embeddings_config.model,
+            api_key=embeddings_config.api_key,
+        )
         self.vector_store = PineconeVectorStore(
-            index=self.vdb.__get_index__(), 
-            embedding=self.embedder, 
-            namespace="article_upload_test_2"
+            index=pinecone_index,
+            embedding=self.embedder,
+            namespace=pinecone_config.namespace,
         )
         
         # Load the RAG prompt
@@ -307,11 +332,11 @@ class RAGLabelingGenerator:
         papers_processed = 0
         
         print(f"Starting batch processing of {num_papers} papers with providers: {providers}")
-        print(f"Queue length: {paper_queue_len()}")
+        print(f"Queue length: {self.queue.paper_queue_len()}")
         
         while papers_processed < num_papers:
             # Claim next paper
-            paper_id = claim_next_paper()
+            paper_id = self.queue.claim_next_paper()
             if not paper_id:
                 print("No more papers in queue")
                 break
@@ -329,12 +354,13 @@ class RAGLabelingGenerator:
                     self.save_results(all_results, f"intermediate_results_{papers_processed + 1}.json")
                 
                 # Acknowledge successful processing
-                ack_paper(paper_id)
+                self.queue.ack_paper(paper_id)
+                self.queue.push_completed_paper(paper_id)
                 papers_processed += 1
                 
             except Exception as e:
                 print(f"Error processing paper {paper_id}: {e}")
-                # Paper remains in shared list, no need to requeue
+                # Paper remains in processing list for retry
                 continue
         
         return all_results
@@ -378,7 +404,13 @@ def main():
         return
 
     # Create instance of RAGLabelingGenerator
-    generator = RAGLabelingGenerator(providers, config.minio)
+    generator = RAGLabelingGenerator(
+        providers=providers,
+        minio_config=config.minio,
+        pinecone_config=config.pinecone,
+        redis_config=config.redis,
+        embeddings_config=config.embeddings,
+    )
 
     # Process papers with all available providers (or specify a subset)
     available_models = list(providers.keys())

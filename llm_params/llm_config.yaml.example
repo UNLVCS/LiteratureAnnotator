@@ -7,6 +7,22 @@ minio:
   bucket_name: ""
   secure: false
 
+pinecone:
+  api_key: ""
+  index_name: "adbm"
+  namespace: "article_upload_test_2"
+
+redis:
+  url: "redis://localhost:6379/0"
+  paper_queue: "q:papers:v1"
+  paper_processing: "q:papers:processing:v1"
+  paper_dedup_set: "s:papers:enqueued:v1"
+  generated_set: "s:papers:generated:v1"
+
+embeddings:
+  api_key: ""  # OpenAI API key for embeddings
+  model: "text-embedding-ada-002"
+
 llm_providers:
   ollama:
     api_key: dummy
