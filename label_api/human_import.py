@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import html
 import json
-import os
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 from langchain_openai import OpenAIEmbeddings
@@ -28,15 +27,19 @@ def _get_vector_store():
     """Lazy-init vector store for chunk retrieval."""
     global _vector_store, _vdb, _embedder
     if _vector_store is None:
+        from config.app_config import load_app_config
         from utilities.vector_db import VectorDb
 
-        _vdb = VectorDb()
-        _embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
-        namespace = os.getenv("PINECONE_HUMAN_NAMESPACE", "article_upload_test_2")
+        app_config = load_app_config()
+        _vdb = VectorDb(pinecone_config=app_config.pinecone)
+        _embedder = OpenAIEmbeddings(
+            model=app_config.embeddings.model,
+            api_key=app_config.embeddings.api_key,
+        )
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),
             embedding=_embedder,
-            namespace=namespace,
+            namespace=app_config.pinecone.human_namespace,
         )
     return _vector_store
 

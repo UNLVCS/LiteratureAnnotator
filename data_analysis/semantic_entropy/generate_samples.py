@@ -9,19 +9,10 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain import hub
 
-from config import load_config_from_yaml_file
-from config.queue_config import QueueConfig
+from config.app_config import load_app_config, AppConfig
 from data_generation.response_standardizer import standardize_llm_response
 from llm_providers.base import BaseLLMProvider, Query, LLMResponse
 from utilities.queue_helpers import PaperQueue
-
-from data_analysis.semantic_entropy.config_models import (
-    GenerateSamplesConfig,
-    MinioConfig,
-    PineconeConfig,
-    RedisConfig,
-    EmbeddingsConfig,
-)
 
 
 class RAGLabelingGenerator:
@@ -29,62 +20,47 @@ class RAGLabelingGenerator:
     RAG-based labeling generator that uses multiple LLM providers
     """
     
-    def __init__(
-        self,
-        providers: Dict[str, BaseLLMProvider],
-        minio_config: MinioConfig,
-        pinecone_config: PineconeConfig,
-        redis_config: RedisConfig,
-        embeddings_config: EmbeddingsConfig,
-    ):
+    def __init__(self, config: AppConfig):
         """
         Initialize the RAG labeling generator
         
         Args:
-            providers: Dictionary mapping model names to provider instances
-            minio_config: Minio configuration
-            pinecone_config: Pinecone vector store configuration
-            redis_config: Redis queue configuration
-            embeddings_config: OpenAI embeddings configuration
+            config: Application configuration from .env.yaml
         """
-        self.providers = providers
+        self.providers = config.get_providers_dict()
+        
+        if not self.providers:
+            raise ValueError("No providers available. Check config and API keys.")
         
         # Setup Minio client
         self.minio_client = Minio(
-            minio_config.url,
-            access_key=minio_config.access_key,
-            secret_key=minio_config.secret_key,
-            secure=minio_config.secure
+            config.minio.url,
+            access_key=config.minio.access_key,
+            secret_key=config.minio.secret_key,
+            secure=config.minio.secure,
         )
-        self.bucket_name = minio_config.bucket_name
+        self.bucket_name = config.minio.bucket_name
         if not self.minio_client.bucket_exists(self.bucket_name):
             print(f"Bucket {self.bucket_name} does not exist. Creating it...")
             self.minio_client.make_bucket(self.bucket_name)
         else:
             print(f"Bucket {self.bucket_name} already exists.")
         
-        # Setup paper queue with config
-        queue_config = QueueConfig(
-            redis_url=redis_config.url,
-            paper_queue=redis_config.paper_queue,
-            paper_processing=redis_config.paper_processing,
-            paper_dedup_set=redis_config.paper_dedup_set,
-            generated_set=redis_config.generated_set,
-        )
-        self.queue = PaperQueue(queue_config)
+        # Setup paper queue
+        self.queue = PaperQueue.from_app_config(config)
         
         # Setup Pinecone and vector store
-        pc = Pinecone(api_key=pinecone_config.api_key)
-        pinecone_index = pc.Index(pinecone_config.index_name)
+        pc = Pinecone(api_key=config.pinecone.api_key)
+        pinecone_index = pc.Index(config.pinecone.index_name)
         
         self.embedder = OpenAIEmbeddings(
-            model=embeddings_config.model,
-            api_key=embeddings_config.api_key,
+            model=config.embeddings.model,
+            api_key=config.embeddings.api_key,
         )
         self.vector_store = PineconeVectorStore(
             index=pinecone_index,
             embedding=self.embedder,
-            namespace=pinecone_config.namespace,
+            namespace=config.pinecone.namespace,
         )
         
         # Load the RAG prompt
@@ -391,29 +367,13 @@ def main():
     """
     Main function to run the RAG labeling script
     """
-    config_path = Path(__file__).parent.parent.parent / "llm_params" / "llm_config.yaml"
-    if not config_path.exists():
-        print(f"Config file not found: {config_path}")
-        return
-
-    config = load_config_from_yaml_file(GenerateSamplesConfig, config_path)
-    providers = config.get_providers_dict()
-
-    if not providers:
-        print("No providers available. Check config and API keys.")
-        return
-
+    config = load_app_config()
+    
     # Create instance of RAGLabelingGenerator
-    generator = RAGLabelingGenerator(
-        providers=providers,
-        minio_config=config.minio,
-        pinecone_config=config.pinecone,
-        redis_config=config.redis,
-        embeddings_config=config.embeddings,
-    )
+    generator = RAGLabelingGenerator(config)
 
     # Process papers with all available providers (or specify a subset)
-    available_models = list(providers.keys())
+    available_models = list(generator.providers.keys())
     print(f"Available models: {available_models}")
     results = generator.process_papers_batch(num_papers=10, providers=available_models)
 

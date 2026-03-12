@@ -1,26 +1,54 @@
-from pinecone import Pinecone, ServerlessSpec, PineconeApiException
-from dotenv import load_dotenv, find_dotenv
-import os
+from typing import Optional, TYPE_CHECKING
 
-class VectorDb():
-    def __init__(self, index_name: str = "adbm"):
-        self.pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
+from pinecone import Pinecone, ServerlessSpec, PineconeApiException
+
+if TYPE_CHECKING:
+    from config.app_config import PineconeConfig
+
+
+class VectorDb:
+    """Pinecone vector database wrapper."""
+    
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        index_name: Optional[str] = None,
+        pinecone_config: Optional["PineconeConfig"] = None,
+    ):
+        """
+        Initialize VectorDb.
+        
+        Args:
+            api_key: Pinecone API key. If not provided, loads from AppConfig.
+            index_name: Index name. If not provided, uses config default.
+            pinecone_config: Optional PineconeConfig object.
+        """
+        if pinecone_config is None and api_key is None:
+            from config.app_config import load_app_config
+            app_config = load_app_config()
+            pinecone_config = app_config.pinecone
+        
+        if pinecone_config is not None:
+            api_key = pinecone_config.api_key
+            index_name = index_name or pinecone_config.index_name
+        
+        if index_name is None:
+            index_name = "adbm"
+        
+        self.pc = Pinecone(api_key=api_key)
 
         try:
             self.pc.create_index(
                 name=index_name,
-                dimension=1536 or os.getenv("EMBEDDER_DIM"),
-                metric='cosine' or os.getenv('EMBEDDER_METRIC'),
-                spec=ServerlessSpec(
-                    cloud='aws',
-                    region='us-east-1'
-                )
+                dimension=1536,
+                metric="cosine",
+                spec=ServerlessSpec(cloud="aws", region="us-east-1"),
             )
         except PineconeApiException as e:
             if e.status == 409:
                 print("Index already exists")
 
-        self.host = self.pc.describe_index(name = index_name).host
+        self.host = self.pc.describe_index(name=index_name).host
         self.index = self.pc.Index(index_name)
 
 

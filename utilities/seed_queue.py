@@ -1,18 +1,15 @@
 """
 Seed the paper queue from a file of paper IDs.
-Uses config manager for env vars (validates at startup).
-run from project root with python -m utilites.seed_queue.py
+Uses config manager for .env.yaml (validates at startup).
+run from project root with python -m utilities.seed_queue
 """
-import redis
 
-from config.base import load_config_from_env
-from config.seed_configs import SeedQueueConfig
+from config.app_config import load_app_config
 from utilities.queue_helpers import enqueue_paper_id
 
-# Load config at startup; validates required env vars
-config = load_config_from_env(SeedQueueConfig)
-print(f"Redis URL: {config.redis_url}")
-r = redis.Redis.from_url(config.redis_url, decode_responses=True)
+# Load config at startup from .env.yaml
+config = load_app_config()
+print(f"Redis URL: {config.redis.url}")
 
 
 def seed_queue_from_file(file_path: str) -> None:
@@ -29,4 +26,4 @@ def seed_queue_from_file(file_path: str) -> None:
 
 
 if __name__ == "__main__":
-    seed_queue_from_file(config.file_path)
+    seed_queue_from_file(config.seed.queue_file)

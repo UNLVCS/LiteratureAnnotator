@@ -2,13 +2,14 @@
 Queue helpers for paper processing pipelines.
 
 Usage:
-    # Use default instance (loads config from env vars):
+    # Use default instance (loads config from .env.yaml):
     from utilities.queue_helpers import claim_next_paper, ack_paper
 
     # Or create custom instance with explicit config:
     from utilities.queue_helpers import PaperQueue
-    from config.queue_config import QueueConfig
-    queue = PaperQueue(QueueConfig(redis_url="redis://custom:6379/0", ...))
+    from config.app_config import load_app_config
+    config = load_app_config()
+    queue = PaperQueue.from_app_config(config)
     queue.claim_next_paper()
 """
 
@@ -18,19 +19,76 @@ import redis
 import atexit
 import signal
 import threading
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
-from config.queue_config import QueueConfig
+if TYPE_CHECKING:
+    from config.app_config import AppConfig, RedisConfig
+
+
+class PaperQueueConfig:
+    """Adapter to normalize different config formats."""
+    
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        paper_queue: str = "q:papers:v1",
+        paper_processing: str = "q:papers:processing:v1",
+        paper_dedup_set: str = "s:papers:enqueued:v1",
+        completed_papers_queue: str = "q:papers:completed:v1",
+        generated_set: str = "s:papers:generated:v1",
+        ann_queue: str = "q:annotations:completed:v1",
+        ann_flush_threshold: int = 1000,
+        ann_persist_path: str = "data_labeling/annotations.jsonl",
+        ann_flush_on_exit: bool = True,
+        ann_install_signal_handlers: bool = True,
+        human_paper_queue: str = "q:papers:human:v1",
+        human_processing_queue: str = "q:papers:human:processing:v1",
+        human_dedup_set: str = "s:papers:human:enqueued:v1",
+    ):
+        self.redis_url = redis_url
+        self.paper_queue = paper_queue
+        self.paper_processing = paper_processing
+        self.paper_dedup_set = paper_dedup_set
+        self.completed_papers_queue = completed_papers_queue
+        self.generated_set = generated_set
+        self.ann_queue = ann_queue
+        self.ann_flush_threshold = ann_flush_threshold
+        self.ann_persist_path = ann_persist_path
+        self.ann_flush_on_exit = ann_flush_on_exit
+        self.ann_install_signal_handlers = ann_install_signal_handlers
+        self.HUMAN_PAPER_QUEUE = human_paper_queue
+        self.HUMAN_PROCESSING_Q = human_processing_queue
+        self.HUMAN_DEDUP_SET = human_dedup_set
+
+    @classmethod
+    def from_redis_config(cls, redis_config: "RedisConfig") -> "PaperQueueConfig":
+        """Create from AppConfig.redis (RedisConfig)."""
+        return cls(
+            redis_url=redis_config.url,
+            paper_queue=redis_config.paper_queue,
+            paper_processing=redis_config.paper_processing,
+            paper_dedup_set=redis_config.paper_dedup_set,
+            completed_papers_queue=redis_config.completed_papers_queue,
+            generated_set=redis_config.generated_set,
+            ann_queue=redis_config.ann_queue,
+            ann_flush_threshold=redis_config.ann_flush_threshold,
+            ann_persist_path=redis_config.ann_persist_path,
+            ann_flush_on_exit=redis_config.ann_flush_on_exit,
+            ann_install_signal_handlers=redis_config.ann_install_signal_handlers,
+            human_paper_queue=redis_config.human_paper_queue,
+            human_processing_queue=redis_config.human_processing_queue,
+            human_dedup_set=redis_config.human_dedup_set,
+        )
 
 
 class PaperQueue:
     """
     Queue manager for paper processing pipelines.
     
-    Accepts a QueueConfig to allow custom Redis URLs and queue names.
+    Accepts a PaperQueueConfig to allow custom Redis URLs and queue names.
     """
 
-    def __init__(self, config: QueueConfig):
+    def __init__(self, config: PaperQueueConfig):
         self.config = config
         self._flush_lock = threading.Lock()
         self._has_flushed_on_shutdown = False
@@ -44,6 +102,12 @@ class PaperQueue:
             retry_on_timeout=True,
             client_name="ls-app",
         )
+
+    @classmethod
+    def from_app_config(cls, app_config: "AppConfig") -> "PaperQueue":
+        """Create PaperQueue from AppConfig."""
+        config = PaperQueueConfig.from_redis_config(app_config.redis)
+        return cls(config)
 
     # -------------------------------------------------------------------------
     # Paper queue operations
@@ -323,15 +387,13 @@ class PaperQueue:
 # -----------------------------------------------------------------------------
 
 def _create_default_queue() -> PaperQueue:
-    """Create default queue instance from environment variables."""
-    from dotenv import load_dotenv, find_dotenv
-    from config import load_config_from_env
+    """Create default queue instance from .env.yaml."""
+    from config.app_config import load_app_config
 
-    load_dotenv(find_dotenv(), override=True)
-    config = load_config_from_env(QueueConfig)
-    print(config.redis_url)
+    app_config = load_app_config()
+    print(f"Redis URL: {app_config.redis.url}")
     
-    queue = PaperQueue(config)
+    queue = PaperQueue.from_app_config(app_config)
     queue.register_shutdown_hooks()
     return queue
 

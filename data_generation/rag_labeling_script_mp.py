@@ -10,35 +10,31 @@ This version uses global functions and variables for multiprocessing compatibili
 """
 
 
-import os
 import json
-import sys
-from multiprocessing import Process, Queue, Manager, Lock
-from typing import Any, Dict, List
-from pathlib import Path
 import signal
-from dotenv import load_dotenv, find_dotenv
+import sys
+from io import BytesIO
+from multiprocessing import Process, Queue, Manager, Lock
+from pathlib import Path
+from typing import Any, Dict, List
 
-# Load environment variables
-
+from minio import Minio
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
+from langchain import hub
 
 from response_standardizer import standardize_llm_response
 
 # Add the parent directory to the path so we can import llm_providers
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Import from the llm_providers package
+from config.app_config import load_app_config
 from llm_providers.base import BaseLLMProvider, Query
 from llm_providers.openai_provider import OpenAIProvider
 from llm_providers.anthropic_provider import AnthropicProvider
 from llm_providers.huggingface_provider import HuggingFaceProvider
 from llm_providers.ollama_provider import OllamaProvider
 from llm_providers.vllm_provider import VLLMProvider
-
-# Import the existing components
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
     claim_next_paper,
@@ -48,19 +44,17 @@ from utilities.queue_helpers import (
     completed_papers_count,
     export_completed_papers_to_file
 )
-from minio import Minio
-from io import BytesIO
 
-
-load_dotenv(find_dotenv(), override=True)
+# Load config from .env.yaml
+_app_config = load_app_config()
 
 client = Minio(
-    os.getenv("MINIO_URL"),
-    access_key=os.getenv("MINIO_ACCESS_KEY"),
-    secret_key=os.getenv("MINIO_SECRET_KEY"),
-    secure=False
+    _app_config.minio.url,
+    access_key=_app_config.minio.access_key,
+    secret_key=_app_config.minio.secret_key,
+    secure=_app_config.minio.secure,
 )
-bucket_name = os.getenv("MINIO_BUCKET_NAME")
+bucket_name = _app_config.minio.bucket_name
 if not client.bucket_exists(bucket_name):
     print(f"Bucket {bucket_name} does not exist. Creating it...")
     client.make_bucket(bucket_name)
