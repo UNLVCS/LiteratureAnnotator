@@ -1,7 +1,7 @@
 """
 Example: Load typed LLM config from YAML and run a query on each model.
 
-Copy llm_params_example.yaml.example to llm_params_example.yaml and add your API keys.
+Copy env.yaml.example to env.yaml and add your API keys.
 Then: load_config_from_yaml_file(LLMProvidersConfig, path).to_dict() -> Dict[str, BaseLLMProvider]
 """
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict
 
 # Add project root for imports
-project_root = Path(__file__).resolve().parent.parent.parent
+project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from config import load_config_from_yaml_file
@@ -19,9 +19,9 @@ from llm_providers.config_models import LLMProvidersConfig
 
 
 def main():
-    config_path = Path(__file__).parent / "llm_params_example.yaml"
+    config_path = Path(__file__).parent / "env.yaml"
     if not config_path.exists():
-        print("Copy llm_params_example.yaml.example to llm_params_example.yaml and add your API keys.")
+        print("Copy env.yaml.example to env.yaml and add your API keys.")
         return
     providers: Dict[str, BaseLLMProvider] = load_config_from_yaml_file(
         LLMProvidersConfig, config_path

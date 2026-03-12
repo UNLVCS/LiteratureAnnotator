@@ -3,12 +3,66 @@ Pydantic models for LLM provider configuration.
 Compatible with load_config_from_yaml_file and load_config_from_json_file.
 """
 
+from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, RootModel
 
 if TYPE_CHECKING:
     from .base import BaseLLMProvider
+
+
+class LLMProvidersDictMixin:
+    """
+    Mixin providing get_providers_dict() for any config that has LLM providers.
+    Subclasses must implement _get_providers_config() to return the providers dict.
+    """
+
+    @abstractmethod
+    def _get_providers_config(self) -> "Dict[str, LLMProviderConfig]":
+        """Return the provider name -> LLMProviderConfig mapping."""
+        ...
+
+    def get_providers_dict(self) -> "Dict[str, BaseLLMProvider]":
+        """Instantiate providers and return model name -> provider map."""
+        from .anthropic_provider import AnthropicProvider
+        from .base import BaseLLMProvider
+        from .huggingface_provider import HuggingFaceProvider
+        from .ollama_provider import OllamaProvider
+        from .openai_provider import OpenAIProvider
+        from .vllm_provider import VLLMProvider
+
+        providers: Dict[str, BaseLLMProvider] = {}
+        for provider_name, provider_config in self._get_providers_config().items():
+            for model_cfg, kwargs in provider_config.iter_models():
+                if model_cfg.skip:
+                    continue
+                if provider_name != "ollama" and not kwargs.get("api_key"):
+                    print(f"Skipping {model_cfg.model} - no API key")
+                    continue
+
+                try:
+                    if provider_name == "openai":
+                        providers[model_cfg.model] = OpenAIProvider(**kwargs)
+                    elif provider_name == "anthropic":
+                        providers[model_cfg.model] = AnthropicProvider(**kwargs)
+                    elif provider_name == "huggingface":
+                        providers[model_cfg.model] = HuggingFaceProvider(**kwargs)
+                    elif provider_name == "vllm":
+                        providers[model_cfg.model] = VLLMProvider(**kwargs)
+                    elif provider_name == "ollama":
+                        temp = OllamaProvider(**kwargs)
+                        if temp.check_server_status():
+                            providers[model_cfg.model] = OllamaProvider(**kwargs)
+                            print(f"Added {model_cfg.model} (ollama)")
+                        else:
+                            print(f"Skipping {model_cfg.model} - ollama server not running")
+                    else:
+                        print(f"Unknown provider: {provider_name}")
+                except Exception as e:
+                    print(f"Failed to setup {model_cfg.model}: {e}")
+
+        return providers
 
 
 class LLMModelConfig(BaseModel):
@@ -53,55 +107,17 @@ class LLMProviderConfig(BaseModel):
             yield m, m.to_provider_kwargs(self.api_key)
 
 
-class LLMProvidersConfig(RootModel[Dict[str, LLMProviderConfig]]):
+class LLMProvidersConfig(LLMProvidersDictMixin, RootModel[Dict[str, LLMProviderConfig]]):
     """
     Wrapper for a config file: mapping provider name -> LLMProviderConfig.
     Use with load_config_from_yaml_file(LLMProvidersConfig, path) or
     load_config_from_json_file(LLMProvidersConfig, path).
-    Call .to_dict() to get instantiated providers: Dict[str, BaseLLMProvider].
+    Call .get_providers_dict() to get instantiated providers: Dict[str, BaseLLMProvider].
     """
+
+    def _get_providers_config(self) -> Dict[str, LLMProviderConfig]:
+        return self.root
 
     def get_providers(self) -> Dict[str, LLMProviderConfig]:
         """Return the provider name -> config map (raw config, not instances)."""
         return self.root
-
-    def get_providers_dict(self) -> "Dict[str, BaseLLMProvider]":
-        """Instantiate providers and return model name -> provider map."""
-        from .anthropic_provider import AnthropicProvider
-        from .base import BaseLLMProvider
-        from .huggingface_provider import HuggingFaceProvider
-        from .ollama_provider import OllamaProvider
-        from .openai_provider import OpenAIProvider
-        from .vllm_provider import VLLMProvider
-
-        providers: Dict[str, BaseLLMProvider] = {}
-        for provider_name, provider_config in self.root.items():
-            for model_cfg, kwargs in provider_config.iter_models():
-                if model_cfg.skip:
-                    continue
-                if provider_name != "ollama" and not kwargs.get("api_key"):
-                    print(f"Skipping {model_cfg.model} - no API key")
-                    continue
-
-                try:
-                    if provider_name == "openai":
-                        providers[model_cfg.model] = OpenAIProvider(**kwargs)
-                    elif provider_name == "anthropic":
-                        providers[model_cfg.model] = AnthropicProvider(**kwargs)
-                    elif provider_name == "huggingface":
-                        providers[model_cfg.model] = HuggingFaceProvider(**kwargs)
-                    elif provider_name == "vllm":
-                        providers[model_cfg.model] = VLLMProvider(**kwargs)
-                    elif provider_name == "ollama":
-                        temp = OllamaProvider(**kwargs)
-                        if temp.check_server_status():
-                            providers[model_cfg.model] = OllamaProvider(**kwargs)
-                            print(f"Added {model_cfg.model} (ollama)")
-                        else:
-                            print(f"Skipping {model_cfg.model} - ollama server not running")
-                    else:
-                        print(f"Unknown provider: {provider_name}")
-                except Exception as e:
-                    print(f"Failed to setup {model_cfg.model}: {e}")
-
-        return providers

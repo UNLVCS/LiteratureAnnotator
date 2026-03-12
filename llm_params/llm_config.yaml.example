@@ -1,0 +1,41 @@
+# Copy to llm_config.yaml and add your API keys (that file is gitignored)
+
+minio:
+  url: "localhost:9000"
+  access_key: ""
+  secret_key: ""
+  bucket_name: ""
+  secure: false
+
+llm_providers:
+  ollama:
+    api_key: dummy
+    models:
+      - model: gpt-oss:20b
+        base_url: http://localhost:11434
+        temperature: 0.1
+        timeout: 120000
+        skip: false
+        options:
+          think: false
+
+  openai:
+    api_key: ""  # add your OpenAI API key here
+    models:
+      - model: gpt-4o
+        temperature: 0.1
+        skip: true
+
+  anthropic:
+    api_key: ""  # add your Anthropic API key here
+    models:
+      - model: claude-3-sonnet-20240229
+        temperature: 0.1
+        skip: true
+
+  huggingface:
+    api_key: ""  # add your HuggingFace token here
+    models:
+      - model: microsoft/DialoGPT-medium
+        temperature: 0.1
+        skip: true
