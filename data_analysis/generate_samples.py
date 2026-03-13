@@ -17,7 +17,6 @@ from dotenv import load_dotenv, find_dotenv
 
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
     claim_next_paper,
@@ -76,51 +75,169 @@ class SampleGenerator:
         self.criteria_prompts = [
             # 1) Original research
             """Criterion 1 – Original Research
-            Decide if the paper is an original research article (not a review, perspective, poster, or preprint).
-            - Positive signals: data collection + statistical analysis (often in Methods).
-            - Negative signals: clear mentions of review, perspective, poster, preprint.
+            Your task: Determine whether this paper reports original empirical research — meaning it
+            collected and analyzed new primary data — rather than being a secondary publication type.
+
+            Reasoning steps (work through these before deciding):
+            1. Does the paper have a Methods section describing data collection, participant recruitment,
+               sample processing, or experimental procedures? (positive signal)
+            2. Does it report statistical analysis of primary data — e.g., regression, t-tests, ANOVA,
+               survival analysis, correlation? (positive signal)
+            3. Does the text contain terms like "systematic review," "meta-analysis," "literature review,"
+               "perspective," "commentary," "editorial," "poster," "preprint," or "protocol"? (negative signal)
+
+            INCLUDE (satisfied=true): Paper describes original data collection and analysis, even if it
+            briefly reviews prior literature.
+            EXCLUDE (satisfied=false): Paper is primarily a review, meta-analysis, perspective, editorial,
+            commentary, protocol, poster, or preprint with no new primary data.
+
+            When uncertain: If a Methods and Results section with primary data are present, default to
+            satisfied=true.
             Return JSON only:
-            {"criterion_1": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+            {"criterion_1": {"satisfied": true/false, "reason": "<one sentence citing specific evidence>"}}""",
 
             # 2) AD focus
             """Criterion 2 – AD Focus
-            Decide if Alzheimer's Disease (AD) is the main focus (diagnosis, treatment, biomarkers, pathology; AD patients incl. MCI/at risk).
-            - Include AD biomarkers: amyloid-beta, tau.
-            - Exclude if focus is general neurodegeneration markers without AD specificity.
+            Your task: Determine whether this paper is EITHER (a) primarily focused on Alzheimer's
+            Disease (AD), OR (b) substantially involves amyloid-beta (Aβ) measurement, presence, or
+            evaluation — even if AD is not the central topic. This is an OR condition, not AND.
+
+            Reasoning steps (work through these before deciding):
+            1. Is AD the primary subject of the study? Consider diagnosis, treatment, prevention,
+               pathology, or biomarker measurement in AD, MCI, or at-risk populations.
+            2. If AD is not the primary subject, does the paper still measure or evaluate amyloid-beta
+               (Aβ40, Aβ42, amyloid plaques, amyloid PET) in a meaningful way — not a single passing mention?
+            3. Does the paper study a non-AD population (e.g., Down Syndrome, cognitively normal adults)
+               but include amyloid-beta as a key component? If yes → include.
+            4. Is AD or amyloid mentioned only once (e.g., one sentence in the introduction) with no
+               further study of it? If yes → exclude.
+            5. Is the paper about general neurodegeneration or tau pathology only, without any AD or
+               amyloid-beta focus? Note: tau alone (t-tau, p-tau) is NOT sufficient for inclusion —
+               tau changes occur across many neurodegenerative diseases.
+
+            INCLUDE (satisfied=true) if ANY of the following is true:
+            - AD is the primary subject (diagnosis, treatment, pathology, biomarkers, at-risk populations).
+            - Amyloid-beta is measured or evaluated as a meaningful component of the study.
+            - A non-AD population is studied but amyloid-beta is a key endpoint or stratification variable.
+
+            EXCLUDE (satisfied=false) if ALL of the following are true:
+            - AD and amyloid-beta are absent or only incidentally mentioned (≤1 sentence).
+            - The paper focuses on general neurodegeneration, tau-only pathology, or unrelated disease.
+
+            Key logic: AD-focus OR amyloid-beta involvement → include. Neither → exclude.
             Return JSON only:
-            {"criterion_2": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+            {"criterion_2": {"satisfied": true/false, "reason": "<one sentence citing specific evidence>"}}""",
 
             # 3) Sample size >= 50
             """Criterion 3 – Sample Size
-            If human study: determine if sample size n >= 50.
-            - If stated n >= 50 → satisfied=true.
-            - If < 50 → satisfied=false (note: can be relaxed later if other criteria are very strong).
-            Return JSON only:
-            {"criterion_3": {"satisfied": true/false, "reason": "<brief reason; include n if found>"}}""",
+            Your task: Determine whether the study's human sample size meets the minimum threshold of n ≥ 50.
 
-            # 4) Protein biomarkers
-            """Criterion 4 – Protein Biomarkers
-            Decide if the study's biomarker focus is on proteins (e.g., protein, amyloid, tau; beta-amyloid).
-            - Satisfied if protein focus is central and recurrent.
-            - Not satisfied if focus is genes/RNA/transcripts/fragments.
-            Return JSON only:
-            {"criterion_4": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+            Reasoning steps (work through these before deciding):
+            1. Find the total number of human participants. Check the abstract, Methods (participants
+               section), Results, and any tables.
+            2. If participants are split into groups (e.g., AD patients + controls), sum all groups to
+               get the total N.
+            3. If the paper reports multiple independent cohorts, use the primary/discovery cohort's N.
+            4. If the paper is not a human study (animal-only, in vitro only), mark satisfied=false and
+               note "not a human study" in the reason.
 
-            # 5) Animal models exclusion
-            """Criterion 5 – Animal Models Exclusion
-            Determine if the study uses animal models.
-            - If animal models are used → satisfied=false.
-            - If human data only → satisfied=true.
-            - If using patient-derived cell cultures (not animals), note that explicitly.
-            Return JSON only:
-            {"criterion_5": {"satisfied": true/false, "reason": "<brief reason; note 'patient cell cultures' if applicable>"}}""",
+            INCLUDE (satisfied=true): Total human N ≥ 50, either stated explicitly or calculable from
+            reported group sizes.
+            EXCLUDE (satisfied=false): Total N < 50, N cannot be determined from the text, or the study
+            does not involve human participants.
 
-            # 6) Blood as AD biomarker
-            """Criterion 6 – Blood as AD Biomarker
-            If 'blood' appears, decide if it is used as an AD biomarker (e.g., serum/plasma for amyloid/tau).
-            - Exclude circulatory measures (e.g., blood pressure, hypertension, vascular health).
+            When uncertain: If N appears to be above 50 but is ambiguously reported, lean toward
+            satisfied=true and note the uncertainty.
             Return JSON only:
-            {"criterion_6": {"satisfied": true/false, "reason": "<brief reason>"}}""",
+            {"criterion_3": {"satisfied": true/false, "reason": "<one sentence; include N if found>"}}""",
+
+            # 4) Targeted biomarker methodology
+            """Criterion 4 – Targeted Biomarker Methodology
+            Your task: Determine whether the study uses a targeted (hypothesis-driven) measurement
+            approach — as opposed to a purely exploratory/discovery-wide approach. The biomarker domain
+            can be proteins, transcripts, metabolites, genes, or imaging; what matters is whether the
+            methodology is targeted or exploratory.
+
+            Reasoning steps (work through these before deciding):
+            1. Identify the primary measurement methods used (check Methods section).
+            2. Do they match targeted methods (see INCLUDE list)? If yes → satisfied=true.
+            3. Are they purely exploratory/discovery-wide (see EXCLUDE list) with no targeted component? If yes → satisfied=false.
+            4. Does the study mix targeted and exploratory methods? If yes → satisfied=true (hybrid rule).
+
+            INCLUDE (satisfied=true) if the study uses ANY of the following targeted methods:
+            - Protein/peptide assays: ELISA, Simoa, MSD, ECL, immunoassay, targeted mass spectrometry,
+              predefined proteomic panels.
+            - Genetic/transcriptomic (targeted): qPCR, ddPCR for specific transcripts, targeted RNA
+              panels (e.g., NanoString), APOE genotyping, specific variant assays, candidate-gene analyses.
+            - Imaging: specific PET tracers (amyloid PET, tau PET, FDG-PET), predefined MRI/imaging
+              endpoints.
+            - Metabolomics: predefined panels targeting specific analytes.
+            - Hybrid: any combination of targeted + exploratory methods.
+
+            EXCLUDE (satisfied=false) ONLY if the study is purely exploratory with NO targeted component:
+            - GWAS, whole-genome sequencing (WGS), whole-exome sequencing (WES) as the primary analysis.
+            - Untargeted/shotgun proteomics (discovery DDA), untargeted metabolomics/lipidomics.
+            - Whole transcriptome RNA-seq, scRNA-seq, single-cell multi-omics, unbiased transcriptomic screens.
+            - Broad "multi-omics discovery," "agnostic screen," or "unbiased" studies with no predefined targets.
+            - Exosome full sequencing or full small-RNA sequencing studies.
+
+            Key logic: targeted OR hybrid → include; purely exploratory with zero targeted component → exclude.
+            Return JSON only:
+            {"criterion_4": {"satisfied": true/false, "reason": "<one sentence citing the specific method>"}}""",
+
+            # 5) Human participants only
+            """Criterion 5 – Human Participants Only
+            Your task: Determine whether the study's primary subjects are human participants (not
+            animal models or purely non-human in vitro systems).
+
+            Reasoning steps (work through these before deciding):
+            1. Check the Methods for animal species: "mouse," "mice," "rat," "murine," "transgenic
+               model," "APP/PS1," "5xFAD," "3xTg," "zebrafish," "non-human primate," etc.
+               If present as the primary subject → satisfied=false.
+            2. Check whether the study involves human participants: recruited subjects, patient cohorts,
+               clinical samples, or human volunteers.
+            3. Are patient-derived cell cultures used (e.g., iPSC-derived neurons, human CSF-derived
+               cells)? These are acceptable — they are NOT animal models → satisfied=true.
+            4. Does the study use both humans and animals? Evaluate whether the human component is
+               primary. If so, lean toward satisfied=true.
+
+            INCLUDE (satisfied=true): Study's primary subjects are human participants, OR human-derived
+            in vitro systems (patient cell cultures, human iPSCs).
+            EXCLUDE (satisfied=false): Study's primary subjects are animal models (mice, rats, non-human
+            primates, etc.), even if minimal human data is also reported.
+
+            When uncertain: If human data is the primary analysis and animal data is only a secondary
+            validation, default to satisfied=true.
+            Return JSON only:
+            {"criterion_5": {"satisfied": true/false, "reason": "<one sentence; note if patient cell cultures or hybrid design>"}}""",
+
+            # 6) Blood-based AD biomarker
+            """Criterion 6 – Blood-Based AD Biomarker
+            Your task: Determine whether the study uses blood (serum, plasma, whole blood, or
+            blood-derived fractions) as a source for measuring AD-relevant biomarkers.
+
+            Reasoning steps (work through these before deciding):
+            1. Does the Methods section mention blood draw, serum, or plasma as a sample type?
+            2. What is the blood used to measure? Look for AD-relevant analytes: amyloid-beta (Aβ40,
+               Aβ42), phosphorylated tau (p-tau181, p-tau217), neurofilament light (NfL), GFAP,
+               or other AD biomarker proteins.
+            3. Is blood used only for non-AD-relevant measures? Examples that do NOT satisfy:
+               blood pressure, lipid panels for cardiovascular risk, CBC, metabolic panels,
+               glucose/insulin levels (unless in an AD biomarker context).
+            4. Is blood used for APOE genotyping or other AD-relevant genetic analyses?
+               This satisfies the criterion.
+            5. Is blood not used in this study at all (e.g., CSF-only, imaging-only, urine-only)?
+               If so → satisfied=false.
+
+            INCLUDE (satisfied=true): Blood/serum/plasma is collected and used to measure AD-relevant
+            biomarkers (amyloid, tau, NfL, GFAP, APOE, other AD proteins or genetic markers).
+            EXCLUDE (satisfied=false): Blood is used only for cardiovascular/metabolic measures
+            unrelated to AD biomarkers, or blood is not collected/used in the study.
+
+            When uncertain: If blood is collected and analyzed in any AD-relevant context, default to
+            satisfied=true.
+            Return JSON only:
+            {"criterion_6": {"satisfied": true/false, "reason": "<one sentence citing the specific blood measure>"}}""",
         ]
 
     def _setup_providers(self, provider_configs: Dict[str, Dict[str, Any]]):
@@ -240,8 +357,25 @@ class SampleGenerator:
                 query = Query(
                     prompt=inference_query,
                     system_message=(
-                        "You are an expert research analyst. "
-                        "Analyze the provided paper content and respond with valid JSON only."
+                        "You are a senior biomedical research analyst with deep expertise in "
+                        "Alzheimer's Disease (AD) and neurodegenerative disease research. "
+                        "Your role is to screen scientific papers for inclusion in a curated "
+                        "AD biomarker study dataset.\n\n"
+                        "For each query you will receive excerpts (chunks) from a single research "
+                        "paper and one specific inclusion criterion to evaluate.\n\n"
+                        "Your responsibilities:\n"
+                        "1. Read every chunk carefully and synthesize information across all "
+                        "sections (abstract, methods, results, discussion).\n"
+                        "2. Apply the criterion exactly as specified — do not add or remove conditions.\n"
+                        "3. Reason through the evidence methodically before reaching a conclusion.\n"
+                        "4. When evidence is ambiguous or information is missing, err toward "
+                        "inclusion (satisfied=true) rather than exclusion, unless the criterion "
+                        "is clearly not met.\n"
+                        "5. Respond with valid JSON only — no preamble, markdown, or text outside "
+                        "the JSON object.\n\n"
+                        "Your 'reason' field must be a single concise sentence citing specific "
+                        "evidence from the paper (e.g., method names, reported N, specific terms "
+                        "found or not found)."
                     ),
                     temperature=self.temperature,
                     max_tokens=500
