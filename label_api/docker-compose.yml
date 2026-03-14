@@ -96,8 +96,6 @@ services:
       dockerfile: label_api/Dockerfile
     container_name: annotation-fastapi
     restart: unless-stopped
-    env_file:
-      - ../.env
     ports:
       - "8000:8000"
     # Hot reload for development
@@ -109,8 +107,8 @@ services:
       --reload-dir /app/label_api
       --reload-dir /app/utilities
     volumes:
-      # Docker overrides (hostnames); merged over base .env.yaml
-      - ../.env.docker-override.yaml.example:/app/override.env.yaml:ro
+      - ../.env.yaml:/app/.env.yaml:ro
+      - ../.env.docker-override.yaml:/app/override.env.yaml:ro
       # Persist annotations and data
       - annotation_data:/app/data_labeling
       # Mount source for development (optional - remove in production)
