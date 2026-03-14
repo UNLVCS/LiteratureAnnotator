@@ -1,8 +1,7 @@
-"""Config package: Pydantic Settings-based env config with load-time validation."""
+"""Config package: unified YAML-based config."""
 
 from config.base import (
     ConfigValidationError,
-    load_config_from_env,
     load_config_from_json_file,
     load_config_from_yaml_file,
 )
@@ -14,7 +13,6 @@ from config.app_config import (
 
 __all__ = [
     "ConfigValidationError",
-    "load_config_from_env",
     "load_config_from_json_file",
     "load_config_from_yaml_file",
     "AppConfig",
