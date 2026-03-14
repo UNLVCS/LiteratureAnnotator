@@ -26,6 +26,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY label_api/ /app/label_api/
 COPY utilities/ /app/utilities/
 COPY config/ /app/config/
+COPY .env.yaml /app/.env.yaml
 
 # Create data directories
 RUN mkdir -p /app/data_labeling
