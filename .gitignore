@@ -6,6 +6,8 @@ ignore_me
 **/*.ipynb
 .env
 .env.yaml
+override.env.yaml
+.env.docker-override.yaml
 llm_providers/examples/yaml_run/env.yaml
 llm_params*.json
 llm_config.yaml

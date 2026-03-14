@@ -1,6 +1,8 @@
 """
 Unified application configuration loaded from .env.yaml.
 
+Optional: override.env.yaml merges over base (e.g. Docker mounts .env.docker-override.yaml.example there).
+
 Usage:
     from config.app_config import load_app_config, AppConfig
     config = load_app_config()  # loads from .env.yaml
@@ -112,12 +114,23 @@ class AppConfig(LLMProvidersDictMixin, BaseModel):
 _app_config: Optional[AppConfig] = None
 
 
+def _deep_merge(base: dict, override: dict) -> dict:
+    """Merge override dict into base. Override values take precedence."""
+    out = dict(base)
+    for k, v in override.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
 def load_app_config(config_path: Optional[Path] = None, reload: bool = False) -> AppConfig:
     """
-    Load application config from .env.yaml.
+    Load application config from .env.yaml, merging override.env.yaml if present.
     
     Args:
-        config_path: Optional path to config file. Defaults to .env.yaml in project root.
+        config_path: Optional path to base config. Defaults to .env.yaml in project root.
         reload: Force reload even if already cached.
     
     Returns:
@@ -129,7 +142,6 @@ def load_app_config(config_path: Optional[Path] = None, reload: bool = False) ->
         return _app_config
     
     if config_path is None:
-        # Look for .env.yaml in project root (where this config/ folder is)
         config_path = Path(__file__).parent.parent / ".env.yaml"
     
     if not config_path.exists():
@@ -138,8 +150,19 @@ def load_app_config(config_path: Optional[Path] = None, reload: bool = False) ->
             "Copy .env.yaml.example to .env.yaml and fill in your values."
         )
     
+    import yaml
     from config.base import load_config_from_yaml_file
-    _app_config = load_config_from_yaml_file(AppConfig, config_path)
+    
+    with open(config_path, "r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    
+    override_path = config_path.parent / "override.env.yaml"
+    if override_path.exists():
+        with open(override_path, "r", encoding="utf-8") as f:
+            override = yaml.safe_load(f) or {}
+        data = _deep_merge(data, override)
+    
+    _app_config = AppConfig.model_validate(data)
     return _app_config
 
 
