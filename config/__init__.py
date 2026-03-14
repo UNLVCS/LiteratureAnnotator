@@ -10,6 +10,12 @@ from config.app_config import (
     load_app_config,
     get_app_config,
 )
+from config.llm_providers_config import (
+    LLMModelConfig,
+    LLMProviderConfig,
+    LLMProvidersConfig,
+    LLMProvidersDictMixin,
+)
 
 __all__ = [
     "ConfigValidationError",
@@ -18,4 +24,8 @@ __all__ = [
     "AppConfig",
     "load_app_config",
     "get_app_config",
+    "LLMModelConfig",
+    "LLMProviderConfig",
+    "LLMProvidersConfig",
+    "LLMProvidersDictMixin",
 ]

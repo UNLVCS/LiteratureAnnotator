@@ -14,7 +14,7 @@ from typing import Dict, Optional
 
 from pydantic import BaseModel, Field
 
-from llm_providers.config_models import LLMProviderConfig, LLMProvidersDictMixin
+from config.llm_providers_config import LLMProviderConfig, LLMProvidersDictMixin
 
 
 class RedisConfig(BaseModel):

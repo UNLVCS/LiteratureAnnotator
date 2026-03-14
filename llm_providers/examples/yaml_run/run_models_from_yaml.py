@@ -14,8 +14,8 @@ project_root = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from config import load_config_from_yaml_file
+from config.llm_providers_config import LLMProvidersConfig
 from llm_providers.base import BaseLLMProvider, Query
-from llm_providers.config_models import LLMProvidersConfig
 
 
 def main():
