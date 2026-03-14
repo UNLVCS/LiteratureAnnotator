@@ -14,7 +14,7 @@ import json
 import signal
 import sys
 from io import BytesIO
-from multiprocessing import Process, Queue, Manager, Lock
+from multiprocessing import Process, Queue, Manager
 from pathlib import Path
 from typing import Any, Dict, List
 
