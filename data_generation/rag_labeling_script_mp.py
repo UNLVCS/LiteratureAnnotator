@@ -30,11 +30,6 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from config.app_config import load_app_config
 from llm_providers.base import BaseLLMProvider, Query
-from llm_providers.openai_provider import OpenAIProvider
-from llm_providers.anthropic_provider import AnthropicProvider
-from llm_providers.huggingface_provider import HuggingFaceProvider
-from llm_providers.ollama_provider import OllamaProvider
-from llm_providers.vllm_provider import VLLMProvider
 from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
     claim_next_paper,
@@ -71,17 +66,21 @@ _providers: Dict[str, BaseLLMProvider] = {}
 
 def initialize_shared_resources():
     """Initialize shared resources globally"""
-    global _embedder, _vector_store, _vdb, _prompt, _criteria_prompts
+    global _embedder, _vector_store, _vdb, _prompt, _criteria_prompts, _providers
     
     if _embedder is None:
-        _vdb = VectorDb()
-        _embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
-        _vector_store = PineconeVectorStore(
-            index=_vdb.__get_index__(), 
-            embedding=_embedder, 
-            namespace="V3_raw_pubmed_articles"
-            # namespace="article_upload_test_2"
+        _vdb = VectorDb(pinecone_config=_app_config.pinecone)
+        _embedder = OpenAIEmbeddings(
+            model=_app_config.embeddings.model,
+            api_key=_app_config.embeddings.api_key,
         )
+        _vector_store = PineconeVectorStore(
+            index=_vdb.__get_index__(),
+            embedding=_embedder,
+            namespace=_app_config.pinecone.human_namespace,
+        )
+        _providers.clear()
+        _providers.update(_app_config.get_providers_dict())
         _prompt = hub.pull("rlm/rag-prompt")
         _criteria_prompts = [
             # 1) Original research
@@ -151,41 +150,6 @@ def initialize_shared_resources():
             "justification": "<overall reasoning>"
             }"""
         ]
-
-def setup_providers(provider_configs: Dict[str, Dict[str, Any]]):
-    """Setup LLM providers based on configuration"""
-    global _providers
-
-    for provider, models in provider_configs.items():
-        for model in models:
-            if model['skip']:
-                continue
-            if provider != "ollama" and not model.get("api_key"):
-                print(f"Skipping {model['model']} - no API key found")
-
-            if "openai" == provider:
-                openai_params = model
-                _providers[model['model']] = OpenAIProvider(**openai_params)
-            if "anthropic" == provider:
-                anthropic_params = model
-                _providers[model['model']] = AnthropicProvider(**anthropic_params)
-            if "huggingface" == provider:
-                hf_params = model
-                _providers[model['model']] = HuggingFaceProvider(**hf_params)
-            if "vllm" == provider:
-                vllm_params = model
-                _providers[model['model']] = VLLMProvider(**vllm_params)
-            if "ollama" == provider:
-                ollama_params = model
-                try:
-                    temp_provider = OllamaProvider(**ollama_params)
-                    if temp_provider.check_server_status():
-                        _providers[model['model']] = OllamaProvider(**ollama_params)
-                        print(f"OLLAMA server is running - {model['model']} provider available")
-                    else:
-                        print(f"Skipping {model['model']} - OLLAMA server not running (start with 'ollama serve')")
-                except Exception as e:
-                    print(f"Skipping {model['model']} - OLLAMA setup failed: {e}")
 
 def get_paper_chunks(paper_id: str) -> List[Dict[str, Any]]:
     """
@@ -412,14 +376,13 @@ def worker_process(provider_name: str, provider_config: BaseLLMProvider,
     finally:
         print(f"Worker {provider_name} finished processing {papers_processed} papers")
 
-def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = None, provider_configs: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = None) -> List[Dict[str, Any]]:
     """
     Process papers using multiprocessing with one worker per provider
 
     Args:
         num_papers: Total number of papers to process across ALL providers (not per provider)
         providers: List of provider names to use (defaults to all available)
-        provider_configs: Original provider configurations
 
     Returns:
         List of results for all processed papers (num_papers results, one per paper-provider combination)
@@ -594,14 +557,8 @@ def main():
     """
     Main function to run the RAG labeling script
     """
-    # Configuration for different providers
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root_dir, "llm_params/llm_params3.json")) as f:
-        provider_configs = json.load(f)
-
-    # Initialize shared resources
+    # Initialize shared resources (loads providers from .env.yaml)
     initialize_shared_resources()
-    setup_providers(provider_configs)
     
     # Get current queue length to determine how many papers to process
     queue_size = paper_queue_len()
@@ -613,10 +570,7 @@ def main():
 
     # Process papers using multiprocessing
     print("Starting RAG-based labeling generation with multiprocessing...")
-    results = process_papers_multiprocessed(
-        num_papers=queue_size,
-        provider_configs=provider_configs
-    )
+    results = process_papers_multiprocessed(num_papers=queue_size)
     
     # Save final results
     save_results(results, "final_rag_labeling_results.json")
