@@ -178,7 +178,23 @@ def _unpack_claim(claim: Any) -> Tuple[Optional[str], Optional[str]]:
     if isinstance(claim, str):   
         return claim, claim
     return None, None
- 
+
+
+def _classified_minio_prefixes(config: AppConfig) -> list[str]:
+    """
+    Model IDs used as MinIO object prefixes under the classified-articles bucket.
+    Matches rag_labeling_script_mp naming: ``{model}/{paper_id}.json``.
+    """
+    seen: list[str] = []
+    for provider_cfg in config.llm_providers.values():
+        for m in provider_cfg.models:
+            if m.skip:
+                continue
+            if m.model not in seen:
+                seen.append(m.model)
+    return seen
+
+
 def periodic_paper_check():
     try:
         new_count = LS.count_new_tasks(LS.project_id)
@@ -224,11 +240,18 @@ def import_next_paper_tasks(project_id: int) -> None:
         print("No paper ID found") 
         return
    
-    try: 
-        # providers = ['gpt-4o']
-        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b']
-        providers = ['openai/gpt-oss-120b']
-        paper_data = None 
+    try:
+        providers = _classified_minio_prefixes(_app_config)
+        if not providers:
+            print(
+                "import_next_paper_tasks: no LLM models in .env.yaml (or all skipped); "
+                "cannot resolve MinIO paths for classified JSON"
+            )
+            if claim_token:
+                requeue_inflight(claim_token)
+            return
+
+        paper_data = None
         for provider in providers:
             try:
                 object_name = f"{provider}/{paper_id}.json"
@@ -337,10 +360,16 @@ def import_next_paper_tasks(project_id: int) -> None:
                 }
                 task = {"data": task_data}
                 LS.import_tasks([task])
+                break
 
-        # Acknowledge the claimed item only if we used the claim pattern
         if claim_token:
-            ack_paper(claim_token)
+            if paper_data is None:
+                print(
+                    f"No classified JSON for paper {paper_id} (tried: {providers}); requeueing"
+                )
+                requeue_inflight(claim_token)
+            else:
+                ack_paper(claim_token)
 
     except Exception:
         # If something failed after claiming, requeue the inflight item
