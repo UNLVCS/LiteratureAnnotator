@@ -13,6 +13,7 @@ class VectorDb:
         self,
         api_key: Optional[str] = None,
         index_name: Optional[str] = None,
+        embedding_dimensions: Optional[int] = None,
         pinecone_config: Optional["PineconeConfig"] = None,
     ):
         """
@@ -23,10 +24,16 @@ class VectorDb:
             index_name: Index name. If not provided, uses config default.
             pinecone_config: Optional PineconeConfig object.
         """
+        app_config = None
         if pinecone_config is None and api_key is None:
             from config.app_config import load_app_config
             app_config = load_app_config()
             pinecone_config = app_config.pinecone
+            embedding_dimensions = embedding_dimensions or app_config.embeddings.dimensions
+        elif embedding_dimensions is None:
+            from config.app_config import load_app_config
+            app_config = load_app_config()
+            embedding_dimensions = app_config.embeddings.dimensions
         
         if pinecone_config is not None:
             api_key = pinecone_config.api_key
@@ -34,13 +41,15 @@ class VectorDb:
         
         if index_name is None:
             index_name = "adbm"
+        if embedding_dimensions is None:
+            embedding_dimensions = 1536
         
         self.pc = Pinecone(api_key=api_key)
 
         try:
             self.pc.create_index(
                 name=index_name,
-                dimension=1536,
+                dimension=embedding_dimensions,
                 metric="cosine",
                 spec=ServerlessSpec(cloud="aws", region="us-east-1"),
             )

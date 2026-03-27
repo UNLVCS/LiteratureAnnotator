@@ -82,6 +82,7 @@ class EmbeddingsConfig(BaseModel):
 
     api_key: str = ""
     model: str = "text-embedding-ada-002"
+    dimensions: int = 1536
 
 
 class SeedConfig(BaseModel):

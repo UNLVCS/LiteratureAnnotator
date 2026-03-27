@@ -35,6 +35,7 @@ def _get_vector_store():
         _embedder = OpenAIEmbeddings(
             model=app_config.embeddings.model,
             api_key=app_config.embeddings.api_key,
+            dimensions=app_config.embeddings.dimensions,
         )
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),

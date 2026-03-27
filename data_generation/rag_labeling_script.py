@@ -47,6 +47,7 @@ class RAGLabelingGenerator:
         self.embedder = OpenAIEmbeddings(
             model=config.embeddings.model,
             api_key=config.embeddings.api_key,
+            dimensions=config.embeddings.dimensions,
         )
         self.vector_store = PineconeVectorStore(
             index=self.vdb.__get_index__(),

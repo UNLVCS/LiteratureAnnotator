@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from minio import Minio
 
 app_config = load_app_config()
+openai_client = openai.OpenAI(api_key=app_config.embeddings.api_key)
 
 client = Minio(
     app_config.minio.url,
@@ -27,10 +28,11 @@ pinecone_namespace = app_config.pinecone.namespace
 
 def generate_embeddings(embed_text):
     load_dotenv()
-    embeddings_obj =  openai.embeddings.create(
-        model = "text-embedding-ada-002",
-        input = embed_text,
-        encoding_format = "float"
+    embeddings_obj = openai_client.embeddings.create(
+        model=app_config.embeddings.model,
+        input=embed_text,
+        encoding_format="float",
+        dimensions=app_config.embeddings.dimensions,
     )
     return embeddings_obj
 

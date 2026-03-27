@@ -49,8 +49,6 @@ services:
     image: heartexlabs/label-studio:latest
     container_name: annotation-label-studio
     restart: unless-stopped
-    env_file:
-      - ../.env
     ports:
       - "8080:8080"
     extra_hosts:
