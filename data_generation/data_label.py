@@ -7,19 +7,22 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from chnker import Chunker
+from config.app_config import load_app_config
 from utilities.vector_db import VectorDb
 import json
 import openai
 from dotenv import load_dotenv
 from minio import Minio
 
+app_config = load_app_config()
+
 client = Minio(
-    "localhost:5000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
-    secure=False
+    app_config.minio.url,
+    access_key=app_config.minio.access_key,
+    secret_key=app_config.minio.secret_key,
+    secure=app_config.minio.secure,
 )
-bucket_name = "raw-pubmed-articles"
+bucket_name = app_config.minio.raw_articles_bucket
 
 def generate_embeddings(embed_text):
     load_dotenv()

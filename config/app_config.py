@@ -45,6 +45,7 @@ class MinioConfig(BaseModel):
     access_key: str = ""
     secret_key: str = ""
     bucket_name: str = "v1-criteria-classified-articles"
+    raw_articles_bucket: str = "raw-pubmed-articles"
     secure: bool = False
     human_annotations_bucket: str = "human-annotations"
     annotations_bucket: str = "completed-annotations"
