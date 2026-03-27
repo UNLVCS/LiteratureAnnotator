@@ -19,7 +19,6 @@ from response_standardizer import standardize_llm_response
 from llm_providers.base import BaseLLMProvider, Query, LLMResponse
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 
 from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
@@ -54,9 +53,6 @@ class RAGLabelingGenerator:
             embedding=self.embedder,
             namespace=config.pinecone.namespace,
         )
-        
-        # Load the RAG prompt
-        self.prompt = hub.pull("rlm/rag-prompt")
         
         # Define the same criteria prompts as in main.py
         self.criteria_prompts = [

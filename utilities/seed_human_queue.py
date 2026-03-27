@@ -1,6 +1,7 @@
 """
 Seed the human labeling paper queue from a file of paper IDs.
 Paper IDs must exist in Pinecone (chunked via data_label.py).
+run from project root with python -m utilities.seed_human_queue
 """
 
 from config.app_config import load_app_config

@@ -6,7 +6,6 @@ from minio import Minio
 from pinecone import Pinecone
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 
 from config.app_config import load_app_config, AppConfig
 from data_generation.response_standardizer import standardize_llm_response
@@ -62,9 +61,6 @@ class RAGLabelingGenerator:
             embedding=self.embedder,
             namespace=config.pinecone.namespace,
         )
-        
-        # Load the RAG prompt
-        self.prompt = hub.pull("rlm/rag-prompt")
         
         # Define the same criteria prompts as in main.py
         self.criteria_prompts = [

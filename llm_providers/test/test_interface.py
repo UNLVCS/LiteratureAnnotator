@@ -52,9 +52,9 @@ def test_provider_initialization():
     assert openai_provider.get_provider_name() == "openai"
     
     # Test Anthropic provider
-    anthropic_provider = AnthropicProvider(api_key="test-key", model="claude-3-sonnet-20240229")
+    anthropic_provider = AnthropicProvider(api_key="test-key", model="claude-sonnet-4-6")
     assert anthropic_provider.api_key == "test-key"
-    assert anthropic_provider.default_model == "claude-3-sonnet-20240229"
+    assert anthropic_provider.default_model == "claude-sonnet-4-6"
     assert anthropic_provider.get_provider_name() == "anthropic"
     
     # Test Hugging Face provider
@@ -93,10 +93,10 @@ def test_query_validation():
     assert anthropic_provider.validate_query(invalid_query2) == False  # Anthropic allows up to 1.0
     assert hf_provider.validate_query(invalid_query2) == True  # HF allows up to 2.0
     
-    # Invalid query - unknown model
+    # Invalid query - unknown model (OpenAI/HF allowlist; Anthropic accepts any model id)
     invalid_query3 = Query(prompt="Valid prompt", model="unknown-model")
     assert openai_provider.validate_query(invalid_query3) == False
-    assert anthropic_provider.validate_query(invalid_query3) == False
+    assert anthropic_provider.validate_query(invalid_query3) == True
     assert hf_provider.validate_query(invalid_query3) == False
     
     print("✓ Query validation tests passed")
@@ -122,7 +122,7 @@ def test_available_models():
     # Test that expected models are present
     assert "gpt-3.5-turbo" in openai_models
     assert "gpt-4" in openai_models
-    assert "claude-3-sonnet-20240229" in anthropic_models
+    assert "claude-sonnet-4-6" in anthropic_models
     assert "microsoft/DialoGPT-medium" in hf_models
     
     print("✓ Available models tests passed")

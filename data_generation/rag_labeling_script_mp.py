@@ -21,7 +21,6 @@ from typing import Any, Dict, List
 from minio import Minio
 from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 
 from response_standardizer import standardize_llm_response
 
@@ -60,13 +59,12 @@ else:
 _embedder = None
 _vector_store = None
 _vdb = None
-_prompt = None
 _criteria_prompts = None
 _providers: Dict[str, BaseLLMProvider] = {}
 
 def initialize_shared_resources():
     """Initialize shared resources globally"""
-    global _embedder, _vector_store, _vdb, _prompt, _criteria_prompts, _providers
+    global _embedder, _vector_store, _vdb, _criteria_prompts, _providers
     
     if _embedder is None:
         _vdb = VectorDb(pinecone_config=_app_config.pinecone)
@@ -82,7 +80,6 @@ def initialize_shared_resources():
         )
         _providers.clear()
         _providers.update(_app_config.get_providers_dict())
-        _prompt = hub.pull("rlm/rag-prompt")
         _criteria_prompts = [
             # 1) Original research
             """Criterion 1 – Original Research
@@ -567,6 +564,14 @@ def main():
     
     if queue_size == 0:
         print("Queue is empty. No papers to process.")
+        return
+
+    if not _providers:
+        print(
+            "No LLM providers configured. In .env.yaml set llm_providers with at least one "
+            "model with skip: false (e.g. vllm with base_url, or ollama with server running, "
+            "or openai/anthropic with api_key)."
+        )
         return
 
     # Process papers using multiprocessing

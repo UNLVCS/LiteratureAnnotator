@@ -37,7 +37,8 @@ class LLMProvidersDictMixin:
             for model_cfg, kwargs in provider_config.iter_models():
                 if model_cfg.skip:
                     continue
-                if provider_name != "ollama" and not kwargs.get("api_key"):
+                # Ollama and vLLM do not require a cloud API key (vLLM uses EMPTY/dummy).
+                if provider_name not in ("ollama", "vllm") and not kwargs.get("api_key"):
                     print(f"Skipping {model_cfg.model} - no API key")
                     continue
 
@@ -49,7 +50,10 @@ class LLMProvidersDictMixin:
                     elif provider_name == "huggingface":
                         providers[model_cfg.model] = HuggingFaceProvider(**kwargs)
                     elif provider_name == "vllm":
-                        providers[model_cfg.model] = VLLMProvider(**kwargs)
+                        vk = dict(kwargs)
+                        if not vk.get("api_key"):
+                            vk["api_key"] = "EMPTY"
+                        providers[model_cfg.model] = VLLMProvider(**vk)
                     elif provider_name == "ollama":
                         temp = OllamaProvider(**kwargs)
                         if temp.check_server_status():

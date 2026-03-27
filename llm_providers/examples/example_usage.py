@@ -54,7 +54,7 @@ def main():
         # Initialize Anthropic provider (you'll need to set ANTHROPIC_API_KEY environment variable)
         anthropic_provider = AnthropicProvider(
             api_key=os.getenv('ANTHROPIC_API_KEY', 'your-anthropic-key-here'),
-            model='claude-3-sonnet-20240229',
+            model='claude-sonnet-4-6',
             temperature=0.7
         )
         
