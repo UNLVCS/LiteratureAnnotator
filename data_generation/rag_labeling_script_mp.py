@@ -77,7 +77,7 @@ def initialize_shared_resources():
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),
             embedding=_embedder,
-            namespace=_app_config.pinecone.human_namespace,
+            namespace=_app_config.pinecone.namespace,
         )
         _providers.clear()
         _providers.update(_app_config.get_providers_dict())

@@ -39,7 +39,7 @@ def _get_vector_store():
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),
             embedding=_embedder,
-            namespace=app_config.pinecone.human_namespace,
+            namespace=app_config.pinecone.namespace,
         )
     return _vector_store
 

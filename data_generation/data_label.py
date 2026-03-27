@@ -23,7 +23,7 @@ client = Minio(
     secure=app_config.minio.secure,
 )
 bucket_name = app_config.minio.raw_articles_bucket
-data_generation_destination_namespace = app_config.pinecone.data_generation_destination_namespace
+pinecone_namespace = app_config.pinecone.namespace
 
 def generate_embeddings(embed_text):
     load_dotenv()
@@ -95,7 +95,7 @@ if __name__ == "__main__":
                  }
             }
 
-            vdb.upsert(data_generation_destination_namespace, [record])
+            vdb.upsert(pinecone_namespace, [record])
             
             # chnkr = Chunker()
 

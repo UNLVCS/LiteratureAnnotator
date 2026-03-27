@@ -57,8 +57,6 @@ class PineconeConfig(BaseModel):
     api_key: str = ""
     index_name: str = "adbm"
     namespace: str = "article_upload_test_2"
-    human_namespace: str = "V3_raw_pubmed_articles"
-    data_generation_destination_namespace: str = "V3_raw_pubmed_articles"
 
 
 class LabelStudioConfig(BaseModel):
