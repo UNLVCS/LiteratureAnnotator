@@ -230,11 +230,9 @@ def import_next_paper_tasks(project_id: int) -> None:
 
     if USE_SAFE_QUEUE:
         claim = claim_next_paper()
-        # claim = claim_next_paper_from_set()
-        # print("Claim: ", claim)
         paper_id, claim_token = _unpack_claim(claim)
     else:
-        paper_id = pop_paper_id()  
+        paper_id = pop_paper_id()
 
     if not paper_id: 
         print("No paper ID found") 
@@ -268,7 +266,7 @@ def import_next_paper_tasks(project_id: int) -> None:
                 print(f"No paper data found for {paper_id}")
                 if claim_token:
                     ack_paper(claim_token)
-                return             
+                return
             
             # Collect all criteria into a single array for one task per paper
             criteria_list = []
@@ -372,7 +370,6 @@ def import_next_paper_tasks(project_id: int) -> None:
                 ack_paper(claim_token)
 
     except Exception:
-        # If something failed after claiming, requeue the inflight item
         if claim_token:
             requeue_inflight(claim_token)
         raise
