@@ -25,7 +25,7 @@ from utilities.queue_helpers import (
     claim_next_paper,
     ack_paper,
     requeue_inflight,
-    paper_queue_len
+    paper_queue_len,
 )
 
 

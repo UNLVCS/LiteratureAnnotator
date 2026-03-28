@@ -36,7 +36,7 @@ from utilities.queue_helpers import (
     paper_queue_len,
     push_completed_paper,
     completed_papers_count,
-    export_completed_papers_to_file
+    export_completed_papers_to_file,
 )
 
 # Load config from .env.yaml
@@ -494,7 +494,7 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
     print(f"Acknowledging {len(papers_to_process)} papers from Redis...")
     for paper_id in papers_to_process:
         ack_paper(paper_id)
-    
+
     # Track completed papers (deduplicated)
     completed_paper_ids = set()
     for result in all_results:
