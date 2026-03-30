@@ -71,7 +71,7 @@ def initialize_shared_resources():
         _embedder = OpenAIEmbeddings(
             model=_app_config.embeddings.model,
             api_key=_app_config.embeddings.api_key,
-            dimensions=_app_config.embeddings.dimensions,
+            dimensions= None if _app_config.embeddings.model == "text-embedding-ada-002" else _app_config.embeddings.dimensions,
         )
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),

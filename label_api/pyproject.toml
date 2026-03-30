@@ -1,0 +1,28 @@
+[project]
+name = "literature-annotator-label-api"
+version = "0.1.0"
+description = "FastAPI + Label Studio integration for annotation workflows."
+requires-python = ">=3.10"
+dependencies = [
+  "apscheduler>=3.10.0",
+  "fastapi>=0.104.0",
+  "httpx>=0.25.0",
+  "label-studio-sdk>=0.0.34",
+  "langchain>=0.1.0",
+  "langchain-core>=0.1.0",
+  "langchain-openai>=0.1.0",
+  "langchain-pinecone>=0.1.0",
+  "minio>=7.2.0",
+  "openai>=1.0.0",
+  "pydantic>=2.5.0",
+  "pydantic-settings>=2.0.0",
+  "python-dotenv>=1.0.0",
+  "python-multipart>=0.0.6",
+  "redis>=5.0.0",
+  "requests>=2.31.0",
+  "uvicorn[standard]>=0.24.0",
+  "websockets>=12.0",
+]
+
+[tool.uv]
+package = false

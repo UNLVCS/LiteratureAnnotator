@@ -1,0 +1,38 @@
+[project]
+name = "literature-annotator"
+version = "0.1.0"
+description = "Workspace root for LiteratureAnnotator sub-packages."
+requires-python = ">=3.10"
+# Virtual root — no package is installed from here; deps come from workspace members.
+dependencies = []
+
+# ---------------------------------------------------------------------------
+# uv workspace: all sub-packages are synced into a single .venv at this root.
+# ---------------------------------------------------------------------------
+[tool.uv.workspace]
+members = [
+    "config",           # shared YAML config models (installable: import config)
+    "llm_providers",    # LLM provider abstraction (installable: import llm_providers)
+    "utilities",        # queue helpers and vector DB utilities
+    "data_generation",  # RAG labeling scripts
+    "data_analysis",    # sample generation and entropy analysis
+    "data_download",    # PubMed BioC downloader
+    "label_api",        # FastAPI + Label Studio webhook server
+    "weak_supervision", # Snorkel weak-supervision experiments
+]
+
+# ---------------------------------------------------------------------------
+# Dependency groups — install with: uv sync --group <name>
+# ---------------------------------------------------------------------------
+[dependency-groups]
+
+# For the SLURM RAG-labeling job.
+# Adds vLLM (not in any member's default deps) and PyYAML (used by config.app_config).
+# Usage: uv sync --group slurm
+slurm = [
+    "vllm>=0.5.0",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false
