@@ -1,65 +1,16 @@
-import os
 import json
-import sys
-from typing import Any, Dict, List
 from pathlib import Path
+from typing import Any, Dict, List
 
-from data_generation.response_standardizer import standardize_llm_response
-
-from llm_providers.base import BaseLLMProvider, Query, LLMResponse
-from llm_providers.openai_provider import OpenAIProvider
-from llm_providers.anthropic_provider import AnthropicProvider
-from llm_providers.huggingface_provider import HuggingFaceProvider
-from llm_providers.ollama_provider import OllamaProvider
-from llm_provider.vllm_provider import VLLMProvider
-from dotenv import load_dotenv, find_dotenv
-
-
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-from langchain import hub
-from utilities.vector_db import VectorDb
-from utilities.queue_helpers import (
-    claim_next_paper,
-    ack_paper,
-    paper_queue_len,
-    push_completed_paper,
-    completed_papers_count,
-    export_completed_papers_to_file
-)
-
-
-
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-from langchain import hub
-from utilities.vector_db import VectorDb
-from utilities.queue_helpers import (
-    claim_next_paper,
-    ack_paper,
-    paper_queue_len,
-    push_completed_paper,
-    completed_papers_count,
-    export_completed_papers_to_file
-)
 from minio import Minio
-from io import BytesIO
+from pinecone import Pinecone
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
 
-
-load_dotenv(find_dotenv(), override=True)
-
-client = Minio(
-    os.getenv("MINIO_URL"),
-    access_key=os.getenv("MINIO_ACCESS_KEY"),
-    secret_key=os.getenv("MINIO_SECRET_KEY"),
-    secure=False
-)
-bucket_name = os.getenv("MINIO_BUCKET_NAME")
-if not client.bucket_exists(bucket_name):
-    print(f"Bucket {bucket_name} does not exist. Creating it...")
-    client.make_bucket(bucket_name)
-else:
-    print(f"Bucket {bucket_name} already exists.")
+from config.app_config import load_app_config, AppConfig
+from data_generation.response_standardizer import standardize_llm_response
+from llm_providers.base import BaseLLMProvider, Query, LLMResponse
+from utilities.queue_helpers import PaperQueue
 
 
 class RAGLabelingGenerator:
@@ -67,27 +18,49 @@ class RAGLabelingGenerator:
     RAG-based labeling generator that uses multiple LLM providers
     """
     
-    def __init__(self, provider_configs: Dict[str, Dict[str, Any]]):
+    def __init__(self, config: AppConfig):
         """
         Initialize the RAG labeling generator
         
         Args:
-            provider_configs: Dictionary mapping provider names to their configs
+            config: Application configuration from .env.yaml
         """
-        self.providers = {}
-        self.setup_providers(provider_configs)
+        self.providers = config.get_providers_dict()
         
-        # Setup vector store and embeddings
-        self.vdb = VectorDb()
-        self.embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
-        self.vector_store = PineconeVectorStore(
-            index=self.vdb.__get_index__(), 
-            embedding=self.embedder, 
-            namespace="article_upload_test_2"
+        if not self.providers:
+            raise ValueError("No providers available. Check config and API keys.")
+        
+        # Setup Minio client
+        self.minio_client = Minio(
+            config.minio.url,
+            access_key=config.minio.access_key,
+            secret_key=config.minio.secret_key,
+            secure=config.minio.secure,
         )
+        self.bucket_name = config.minio.bucket_name
+        if not self.minio_client.bucket_exists(self.bucket_name):
+            print(f"Bucket {self.bucket_name} does not exist. Creating it...")
+            self.minio_client.make_bucket(self.bucket_name)
+        else:
+            print(f"Bucket {self.bucket_name} already exists.")
         
-        # Load the RAG prompt
-        self.prompt = hub.pull("rlm/rag-prompt")
+        # Setup paper queue
+        self.queue = PaperQueue.from_app_config(config)
+        
+        # Setup Pinecone and vector store
+        pc = Pinecone(api_key=config.pinecone.api_key)
+        pinecone_index = pc.Index(config.pinecone.index_name)
+        
+        self.embedder = OpenAIEmbeddings(
+            model=config.embeddings.model,
+            api_key=config.embeddings.api_key,
+            dimensions=config.embeddings.dimensions,
+        )
+        self.vector_store = PineconeVectorStore(
+            index=pinecone_index,
+            embedding=self.embedder,
+            namespace=config.pinecone.namespace,
+        )
         
         # Define the same criteria prompts as in main.py
         self.criteria_prompts = [
@@ -158,36 +131,6 @@ class RAGLabelingGenerator:
             "justification": "<overall reasoning>"
             }"""
         ]
-    
-    def setup_providers(self, provider_configs: Dict[str, Dict[str, Any]]):
-        """Setup LLM providers based on configuration"""
-        for provider, models in provider_configs.items():
-            for model in models:
-                if model['skip']: 
-                    continue
-                if provider != "ollama" and model["api_key"]:
-                    print(f"Skipping {model['model']} - no API key found")
-
-                if "openai" == provider:
-                    openai_params = model
-                    self.providers[model['model']] = OpenAIProvider(**openai_params)
-                if "anthropic" == provider:
-                    anthropic_params = model
-                    self.providers[model['model']] = AnthropicProvider(**anthropic_params)
-                if "huggingface" == provider:
-                    hf_params = model
-                    self.providers[model['model']] = HuggingFaceProvider(**hf_params)
-                if "ollama" == provider:
-                    ollama_params = model
-                    try:
-                        temp_provider = OllamaProvider(**ollama_params)
-                        if temp_provider.check_server_status():
-                            self.providers[model['model']] = OllamaProvider(**ollama_params)
-                            print(f"OLLAMA server is running - {model['model']} provider available")
-                        else:
-                            print(f"Skipping {model['model']} - OLLAMA server not running (start with 'ollama serve')")
-                    except Exception as e:
-                        print(f"Skipping {model['model']} - OLLAMA setup failed: {e}")
     
     def get_paper_chunks(self, paper_id: str) -> List[Dict[str, Any]]:
         """
@@ -361,11 +304,11 @@ class RAGLabelingGenerator:
         papers_processed = 0
         
         print(f"Starting batch processing of {num_papers} papers with providers: {providers}")
-        print(f"Queue length: {paper_queue_len()}")
+        print(f"Queue length: {self.queue.paper_queue_len()}")
         
         while papers_processed < num_papers:
             # Claim next paper
-            paper_id = claim_next_paper()
+            paper_id = self.queue.claim_next_paper()
             if not paper_id:
                 print("No more papers in queue")
                 break
@@ -383,12 +326,13 @@ class RAGLabelingGenerator:
                     self.save_results(all_results, f"intermediate_results_{papers_processed + 1}.json")
                 
                 # Acknowledge successful processing
-                ack_paper(paper_id)
+                self.queue.ack_paper(paper_id)
+                self.queue.push_completed_paper(paper_id)
                 papers_processed += 1
                 
             except Exception as e:
                 print(f"Error processing paper {paper_id}: {e}")
-                # Paper remains in shared list, no need to requeue
+                # Paper remains in processing list for retry
                 continue
         
         return all_results
@@ -419,16 +363,15 @@ def main():
     """
     Main function to run the RAG labeling script
     """
-    # Configuration for different providers
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root_dir, "llm_params/llm_params.json")) as f:
-        provider_configs = json.load(f)
-
+    config = load_app_config()
+    
     # Create instance of RAGLabelingGenerator
-    generator = RAGLabelingGenerator(provider_configs)
+    generator = RAGLabelingGenerator(config)
 
-    # Process papers
-    results = generator.process_papers_batch(num_papers=10, providers=["openai/gpt-oss:120b"])
+    # Process papers with all available providers (or specify a subset)
+    available_models = list(generator.providers.keys())
+    print(f"Available models: {available_models}")
+    results = generator.process_papers_batch(num_papers=10, providers=available_models)
 
     # Save results
     generator.save_results(results, "rag_labeling_results.json")

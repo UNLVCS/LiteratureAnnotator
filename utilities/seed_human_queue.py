@@ -1,17 +1,15 @@
 """
 Seed the human labeling paper queue from a file of paper IDs.
 Paper IDs must exist in Pinecone (chunked via data_label.py).
+run from project root with python -m utilities.seed_human_queue
 """
 
-import os
-
-from config import load_config
-from config.seed_configs import SeedHumanQueueConfig
+from config.app_config import load_app_config
 from utilities.queue_helpers import enqueue_paper_id_human
 
-#load config at startup; validates required env vars
-config = load_config(SeedHumanQueueConfig)
-print(f"Redis URL: {config.redis_url}")
+# Load config at startup from .env.yaml
+config = load_app_config()
+print(f"Redis URL: {config.redis.url}")
 
 
 def seed_human_queue_from_file(file_path: str) -> None:
@@ -28,5 +26,4 @@ def seed_human_queue_from_file(file_path: str) -> None:
 
 
 if __name__ == "__main__":
-
-    seed_human_queue_from_file(config.human_papers_file)
+    seed_human_queue_from_file(config.seed.human_papers_file)

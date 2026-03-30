@@ -6,6 +6,7 @@ python-multipart>=0.0.6
 
 # Pydantic
 pydantic>=2.5.0
+pydantic-settings>=2.0.0
 
 # Label Studio SDK
 label-studio-sdk>=0.0.34

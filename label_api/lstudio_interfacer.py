@@ -1,12 +1,19 @@
-from label_studio_sdk import Client
-import os
-from dotenv import load_dotenv
 import requests
+from typing import TYPE_CHECKING
+
+from label_studio_sdk import Client
+
+if TYPE_CHECKING:
+    from config.app_config import LabelStudioConfig
+
 
 class Labeller:
-    def __init__(self):
-        load_dotenv()
-        self.ls = Client(url=os.getenv('LABEL_STUDIO_URL'), api_key=os.getenv('LABEL_STUDIO_API_KEY'))
+    def __init__(self, config: "LabelStudioConfig" = None):
+        if config is None:
+            from config.app_config import load_app_config
+            config = load_app_config().label_studio
+        
+        self.ls = Client(url=config.label_studio_url, api_key=config.label_studio_api_key)
 
 
         # Load XML label config
@@ -14,6 +21,7 @@ class Labeller:
             interface_config = f.read()
 
         # Create a new project with your custom labeling interface
+        self._config = config
         self.project = self.ls.start_project(
             title='RAG Annotation Project',
             description='Labeling sections relevant to questions using a RAG pipeline',
@@ -22,7 +30,7 @@ class Labeller:
 
         # Headers for creating Webhooks later
         self.headers = {
-            "Authorization": f"Token {os.getenv('LABEL_STUDIO_API_KEY')}"
+            "Authorization": f"Token {config.label_studio_api_key}"
         }
         
 

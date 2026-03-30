@@ -7,26 +7,32 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 from chnker import Chunker
+from config.app_config import load_app_config
 from utilities.vector_db import VectorDb
 import json
 import openai
 from dotenv import load_dotenv
 from minio import Minio
 
+app_config = load_app_config()
+openai_client = openai.OpenAI(api_key=app_config.embeddings.api_key)
+
 client = Minio(
-    "localhost:5000",
-    access_key="minioadmin",
-    secret_key="minioadmin",
-    secure=False
+    app_config.minio.url,
+    access_key=app_config.minio.access_key,
+    secret_key=app_config.minio.secret_key,
+    secure=app_config.minio.secure,
 )
-bucket_name = "raw-pubmed-articles"
+bucket_name = app_config.minio.raw_articles_bucket
+pinecone_namespace = app_config.pinecone.namespace
 
 def generate_embeddings(embed_text):
     load_dotenv()
-    embeddings_obj =  openai.embeddings.create(
-        model = "text-embedding-ada-002",
-        input = embed_text,
-        encoding_format = "float"
+    embeddings_obj = openai_client.embeddings.create(
+        model=app_config.embeddings.model,
+        input=embed_text,
+        encoding_format="float",
+        dimensions=app_config.embeddings.dimensions,
     )
     return embeddings_obj
 
@@ -91,7 +97,7 @@ if __name__ == "__main__":
                  }
             }
 
-            vdb.upsert("V3_raw_pubmed_articles", [record])       
+            vdb.upsert(pinecone_namespace, [record])
             
             # chnkr = Chunker()
 

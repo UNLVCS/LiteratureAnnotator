@@ -1,0 +1,29 @@
+  D000544  Alzheimer Disease
+           A degenerative disease of the BRAIN characterized by the insidious onset of DEMENTIA. Impairment of MEMORY, judgment, attention span, and problem solving skills are followed by severe APRAXIAS and a g…
+           aka: Alzheimer Syndrome, Alzheimer-Type Dementia (ATD), Alzheimer Type Dementia (ATD), Dementia, Alzheimer-Type (ATD), Alzheimer's Diseases
+           tree: C10.228.140.380.100, C10.574.945.249, F03.615.400.100
+
+  D016229  Amyloid beta-Peptides
+           Peptides generated from AMYLOID BETA-PEPTIDES PRECURSOR. An amyloid fibrillar form of these peptides is the major component of amyloid plaques found in individuals with Alzheimer's disease and in aged…
+           aka: Amyloid beta Peptides, beta-Peptides, Amyloid, Alzheimer beta-Protein, Alzheimer beta Protein, beta-Protein, Alzheimer
+           tree: D12.644.024, D12.776.049.407.249.500, D12.776.543.039.500
+
+  D016564  Amyloid beta-Protein Precursor
+           A single-pass type I membrane protein. It is cleaved by AMYLOID PRECURSOR PROTEIN SECRETASES to produce peptides of varying amino acid lengths. A 39-42 amino acid peptide, AMYLOID BETA-PEPTIDES is a p…
+           aka: Amyloid beta Protein Precursor, beta-Protein Precursor, Amyloid, beta-Amyloid Protein Precursor, beta Amyloid Protein Precursor, Amyloid A4 Protein Precursor
+           tree: D12.776.049.407.249, D12.776.543.039, D12.776.811.050, D12.776.815.468.500
+
+  D016657  Cerebral Amyloid Angiopathy
+           A heterogeneous group of sporadic or familial disorders characterized by AMYLOID deposits in the walls of small and medium sized blood vessels of CEREBRAL CORTEX and MENINGES. Clinical features includ…
+           aka: Angiopathy, Cerebral Amyloid, Cerebral Amyloid Angiopathies, Amyloid Angiopathy, Cerebral, Congophilic Angiopathy, Angiopathy, Congophilic
+           tree: C10.228.140.300.510.200.200, C14.907.253.560.200.200, C18.452.845.500.100
+
+  D016875  tau Proteins
+           Microtubule-associated proteins that are mainly expressed in neurons. Tau proteins constitute several isoforms and play an important role in the assembly of tubulin monomers into microtubules and in m…
+           aka: Proteins, tau, tau Protein, Protein, tau
+           tree: D12.776.220.600.450.510, D12.776.631.560.510
+
+  D016900  Neurofilament Proteins
+           Type III intermediate filament proteins that assemble into neurofilaments, the major cytoskeletal element in nerve axons and dendrites. They consist of three distinct polypeptides, the neurofilament t…
+           aka: Proteins, Neurofilament, Neurofilament Protein, Protein, Neurofilament, Heavy Neurofilament Protein, Neurofilament Protein, Heavy
+           tree: D05.750.078.593.630, D12.776.220.475.630, D12.776.631.630

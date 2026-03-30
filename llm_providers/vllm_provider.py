@@ -4,7 +4,7 @@ vLLM provider implementation using LangChain's ChatOpenAI interface
 
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from .base import BaseLLMProvider, Query, LLMResponse
 
 

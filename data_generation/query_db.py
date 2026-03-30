@@ -2,7 +2,6 @@ from langchain_openai import ChatOpenAI
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain.chains import RetrievalQA
-from langchain import hub
 from langchain_pinecone import PineconeVectorStore
 from vector_db import VectorDb
 from dotenv import load_dotenv

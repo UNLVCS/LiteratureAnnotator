@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "literature-annotator-config"
+version = "0.1.0"
+description = "Shared YAML-based application configuration for LiteratureAnnotator."
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.0.0",
+  "pyyaml>=6.0",
+  "typing-extensions>=4.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = ".."}
+packages = ["config"]

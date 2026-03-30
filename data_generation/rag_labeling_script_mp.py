@@ -10,35 +10,25 @@ This version uses global functions and variables for multiprocessing compatibili
 """
 
 
-import os
 import json
-import sys
-from multiprocessing import Process, Queue, Manager, Lock
-from typing import Any, Dict, List
-from pathlib import Path
 import signal
-from dotenv import load_dotenv, find_dotenv
+import sys
+from io import BytesIO
+from multiprocessing import Process, Queue, Manager
+from pathlib import Path
+from typing import Any, Dict, List
 
-# Load environment variables
-
+from minio import Minio
+from langchain_openai import OpenAIEmbeddings
+from langchain_pinecone import PineconeVectorStore
 
 from response_standardizer import standardize_llm_response
 
 # Add the parent directory to the path so we can import llm_providers
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Import from the llm_providers package
+from config.app_config import load_app_config
 from llm_providers.base import BaseLLMProvider, Query
-from llm_providers.openai_provider import OpenAIProvider
-from llm_providers.anthropic_provider import AnthropicProvider
-from llm_providers.huggingface_provider import HuggingFaceProvider
-from llm_providers.ollama_provider import OllamaProvider
-from llm_providers.vllm_provider import VLLMProvider
-
-# Import the existing components
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-from langchain import hub
 from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
     claim_next_paper,
@@ -46,21 +36,19 @@ from utilities.queue_helpers import (
     paper_queue_len,
     push_completed_paper,
     completed_papers_count,
-    export_completed_papers_to_file
+    export_completed_papers_to_file,
 )
-from minio import Minio
-from io import BytesIO
 
-
-load_dotenv(find_dotenv(), override=True)
+# Load config from .env.yaml
+_app_config = load_app_config()
 
 client = Minio(
-    os.getenv("MINIO_URL"),
-    access_key=os.getenv("MINIO_ACCESS_KEY"),
-    secret_key=os.getenv("MINIO_SECRET_KEY"),
-    secure=False
+    _app_config.minio.url,
+    access_key=_app_config.minio.access_key,
+    secret_key=_app_config.minio.secret_key,
+    secure=_app_config.minio.secure,
 )
-bucket_name = os.getenv("MINIO_BUCKET_NAME")
+bucket_name = _app_config.minio.bucket_name
 if not client.bucket_exists(bucket_name):
     print(f"Bucket {bucket_name} does not exist. Creating it...")
     client.make_bucket(bucket_name)
@@ -71,24 +59,27 @@ else:
 _embedder = None
 _vector_store = None
 _vdb = None
-_prompt = None
 _criteria_prompts = None
-_providers = {}
+_providers: Dict[str, BaseLLMProvider] = {}
 
 def initialize_shared_resources():
     """Initialize shared resources globally"""
-    global _embedder, _vector_store, _vdb, _prompt, _criteria_prompts
+    global _embedder, _vector_store, _vdb, _criteria_prompts, _providers
     
     if _embedder is None:
-        _vdb = VectorDb()
-        _embedder = OpenAIEmbeddings(model="text-embedding-ada-002")
-        _vector_store = PineconeVectorStore(
-            index=_vdb.__get_index__(), 
-            embedding=_embedder, 
-            namespace="V3_raw_pubmed_articles"
-            # namespace="article_upload_test_2"
+        _vdb = VectorDb(pinecone_config=_app_config.pinecone)
+        _embedder = OpenAIEmbeddings(
+            model=_app_config.embeddings.model,
+            api_key=_app_config.embeddings.api_key,
+            dimensions= None if _app_config.embeddings.model == "text-embedding-ada-002" else _app_config.embeddings.dimensions,
         )
-        _prompt = hub.pull("rlm/rag-prompt")
+        _vector_store = PineconeVectorStore(
+            index=_vdb.__get_index__(),
+            embedding=_embedder,
+            namespace=_app_config.pinecone.namespace,
+        )
+        _providers.clear()
+        _providers.update(_app_config.get_providers_dict())
         _criteria_prompts = [
             # 1) Original research
             """Criterion 1 – Original Research
@@ -157,42 +148,6 @@ def initialize_shared_resources():
             "justification": "<overall reasoning>"
             }"""
         ]
-
-def setup_providers(provider_configs: Dict[str, Dict[str, Any]]):
-    """Setup LLM providers based on configuration"""
-    global _providers
-    
-    for provider, models in provider_configs.items():
-        for model in models:
-            # print(type(model))
-            if model['skip']: 
-                continue
-            if provider != "ollama" and not model.get("api_key"):
-                print(f"Skipping {model['model']} - no API key found")
-
-            if "openai" == provider:
-                openai_params = model
-                _providers[model['model']] = OpenAIProvider(**openai_params)
-            if "anthropic" == provider:
-                anthropic_params = model
-                _providers[model['model']] = AnthropicProvider(**anthropic_params)
-            if "huggingface" == provider:
-                hf_params = model
-                _providers[model['model']] = HuggingFaceProvider(**hf_params)
-            if "vllm" == provider:
-                vllm_params = model
-                _providers[model['model']] = VLLMProvider(**vllm_params)
-            if "ollama" == provider:
-                ollama_params = model
-                try:
-                    temp_provider = OllamaProvider(**ollama_params)
-                    if temp_provider.check_server_status():
-                        _providers[model['model']] = OllamaProvider(**ollama_params)
-                        print(f"OLLAMA server is running - {model['model']} provider available")
-                    else:
-                        print(f"Skipping {model['model']} - OLLAMA server not running (start with 'ollama serve')")
-                except Exception as e:
-                    print(f"Skipping {model['model']} - OLLAMA setup failed: {e}")
 
 def get_paper_chunks(paper_id: str) -> List[Dict[str, Any]]:
     """
@@ -419,15 +374,14 @@ def worker_process(provider_name: str, provider_config: BaseLLMProvider,
     finally:
         print(f"Worker {provider_name} finished processing {papers_processed} papers")
 
-def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = None, provider_configs: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = None) -> List[Dict[str, Any]]:
     """
     Process papers using multiprocessing with one worker per provider
-    
+
     Args:
         num_papers: Total number of papers to process across ALL providers (not per provider)
         providers: List of provider names to use (defaults to all available)
-        provider_configs: Original provider configurations
-        
+
     Returns:
         List of results for all processed papers (num_papers results, one per paper-provider combination)
     """
@@ -540,7 +494,7 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
     print(f"Acknowledging {len(papers_to_process)} papers from Redis...")
     for paper_id in papers_to_process:
         ack_paper(paper_id)
-    
+
     # Track completed papers (deduplicated)
     completed_paper_ids = set()
     for result in all_results:
@@ -601,14 +555,8 @@ def main():
     """
     Main function to run the RAG labeling script
     """
-    # Configuration for different providers
-    root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    with open(os.path.join(root_dir, "llm_params/llm_params3.json")) as f:
-        provider_configs = json.load(f)
-    
-    # Initialize shared resources
+    # Initialize shared resources (loads providers from .env.yaml)
     initialize_shared_resources()
-    setup_providers(provider_configs)
     
     # Get current queue length to determine how many papers to process
     queue_size = paper_queue_len()
@@ -618,12 +566,17 @@ def main():
         print("Queue is empty. No papers to process.")
         return
 
+    if not _providers:
+        print(
+            "No LLM providers configured. In .env.yaml set llm_providers with at least one "
+            "model with skip: false (e.g. vllm with base_url, or ollama with server running, "
+            "or openai/anthropic with api_key)."
+        )
+        return
+
     # Process papers using multiprocessing
     print("Starting RAG-based labeling generation with multiprocessing...")
-    results = process_papers_multiprocessed(
-        num_papers=queue_size,
-        provider_configs=provider_configs
-    )
+    results = process_papers_multiprocessed(num_papers=queue_size)
     
     # Save final results
     save_results(results, "final_rag_labeling_results.json")

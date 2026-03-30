@@ -4,7 +4,7 @@ OpenAI provider implementation using LangChain
 
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI, OpenAI
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from .base import BaseLLMProvider, Query, LLMResponse
 
 
@@ -105,6 +105,8 @@ class OpenAIProvider(BaseLLMProvider):
             List of model names
         """
         return [
+            "gpt-4o",
+            "gpt-4o-mini",
             "gpt-4",
             "gpt-4-turbo-preview",
             "gpt-3.5-turbo",

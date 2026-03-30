@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: llm_providers
+Version: 0.1.0
+Summary: Unified interface for multiple LLM providers.
+Requires-Python: >=3.8
+Requires-Dist: langchain>=0.1.0
+Requires-Dist: langchain-core>=0.1.0
+Requires-Dist: langchain-openai>=0.1.0
+Requires-Dist: langchain-anthropic>=0.1.0
+Requires-Dist: langchain-huggingface>=0.1.0
+Requires-Dist: langchain-pinecone>=0.1.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: requests>=2.25.0
+Requires-Dist: typing-extensions>=4.0.0
+Provides-Extra: local-models
+Requires-Dist: accelerate>=0.20.0; extra == "local-models"
+Requires-Dist: torch>=1.9.0; extra == "local-models"
+Requires-Dist: transformers>=4.20.0; extra == "local-models"
+Requires-Dist: vllm>=0.5.0; extra == "local-models"
+Provides-Extra: runtime
+Requires-Dist: minio>=7.2.0; extra == "runtime"
+Requires-Dist: redis>=5.0.0; extra == "runtime"
+Dynamic: requires-python

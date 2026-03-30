@@ -11,13 +11,11 @@ from io import BytesIO
 from typing import Any, Dict, Optional, Tuple
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request, BackgroundTasks
 from minio import Minio
 from pydantic import BaseModel
 
-from config.base import load_config
-from config.label_api_config import LabelApiConfig
+from config.app_config import load_app_config, AppConfig
 from label_api.human_import import import_next_human_tasks
 from label_api.human_labeller_sdk import HumanLabellerSDK
 from label_api.lstudio_interfacer_sdk import LabellerSDK
@@ -28,23 +26,21 @@ from utilities.queue_helpers import (
     requeue_inflight,
 )
 
-load_dotenv(find_dotenv(), override=True)
-
-# Load config at startup; validates required env vars
-_config = load_config(LabelApiConfig)
+# Load config at startup from .env.yaml
+_app_config = load_app_config()
 
 
-def _minio_client(config: LabelApiConfig) -> Minio:
+def _minio_client(config: AppConfig) -> Minio:
     """Build Minio client from config."""
     return Minio(
-        config.minio_endpoint,
-        access_key=config.minio_access_key,
-        secret_key=config.minio_secret_key,
-        secure=config.minio_secure,
+        config.minio.url,
+        access_key=config.minio.access_key,
+        secret_key=config.minio.secret_key,
+        secure=config.minio.secure,
     )
 
 
-client = _minio_client(_config)
+client = _minio_client(_app_config)
 
 # Scheduler for background tasks
 scheduler = BackgroundScheduler()
@@ -73,8 +69,8 @@ scheduler = BackgroundScheduler()
 # ]
 
 
-LS = LabellerSDK(_config)
-LS_Human = HumanLabellerSDK(_config)
+LS = LabellerSDK(_app_config.label_studio)
+LS_Human = HumanLabellerSDK(_app_config.label_studio)
 app = FastAPI()
 
 @app.get("/health")
@@ -87,7 +83,7 @@ async def startup_event():
 
     # Import initial tasks at startup instead of waiting for PROJECT_CREATED event
     # This ensures tasks are loaded even if the project already exists
-    webhook_url = f"{_config.webhook_host}/webhook"
+    webhook_url = f"{_app_config.label_studio.webhook_host}/webhook"
     LS.create_webhook(endpoint=webhook_url)
     LS_Human.create_webhook(endpoint=webhook_url)
 
@@ -182,7 +178,23 @@ def _unpack_claim(claim: Any) -> Tuple[Optional[str], Optional[str]]:
     if isinstance(claim, str):   
         return claim, claim
     return None, None
- 
+
+
+def _classified_minio_prefixes(config: AppConfig) -> list[str]:
+    """
+    Model IDs used as MinIO object prefixes under the classified-articles bucket.
+    Matches rag_labeling_script_mp naming: ``{model}/{paper_id}.json``.
+    """
+    seen: list[str] = []
+    for provider_cfg in config.llm_providers.values():
+        for m in provider_cfg.models:
+            if m.skip:
+                continue
+            if m.model not in seen:
+                seen.append(m.model)
+    return seen
+
+
 def periodic_paper_check():
     try:
         new_count = LS.count_new_tasks(LS.project_id)
@@ -218,25 +230,30 @@ def import_next_paper_tasks(project_id: int) -> None:
 
     if USE_SAFE_QUEUE:
         claim = claim_next_paper()
-        # claim = claim_next_paper_from_set()
-        # print("Claim: ", claim)
         paper_id, claim_token = _unpack_claim(claim)
     else:
-        paper_id = pop_paper_id()  
+        paper_id = pop_paper_id()
 
     if not paper_id: 
         print("No paper ID found") 
         return
    
-    try: 
-        # providers = ['gpt-4o']
-        # providers = ['gpt-4o', 'gpt-oss:20b', 'qwen3:235b']
-        providers = ['openai/gpt-oss-120b']
-        paper_data = None 
+    try:
+        providers = _classified_minio_prefixes(_app_config)
+        if not providers:
+            print(
+                "import_next_paper_tasks: no LLM models in .env.yaml (or all skipped); "
+                "cannot resolve MinIO paths for classified JSON"
+            )
+            if claim_token:
+                requeue_inflight(claim_token)
+            return
+
+        paper_data = None
         for provider in providers:
             try:
                 object_name = f"{provider}/{paper_id}.json"
-                response = client.get_object(bucket_name=_config.minio_bucket, object_name=object_name)
+                response = client.get_object(bucket_name=_app_config.minio.bucket_name, object_name=object_name)
                 data = response.data.decode('utf-8') 
                 paper_data = json.loads(data) 
                 print(f"Paper data for {provider}")
@@ -249,7 +266,7 @@ def import_next_paper_tasks(project_id: int) -> None:
                 print(f"No paper data found for {paper_id}")
                 if claim_token:
                     ack_paper(claim_token)
-                return             
+                return
             
             # Collect all criteria into a single array for one task per paper
             criteria_list = []
@@ -341,13 +358,18 @@ def import_next_paper_tasks(project_id: int) -> None:
                 }
                 task = {"data": task_data}
                 LS.import_tasks([task])
+                break
 
-        # Acknowledge the claimed item only if we used the claim pattern
         if claim_token:
-            ack_paper(claim_token)
+            if paper_data is None:
+                print(
+                    f"No classified JSON for paper {paper_id} (tried: {providers}); requeueing"
+                )
+                requeue_inflight(claim_token)
+            else:
+                ack_paper(claim_token)
 
     except Exception:
-        # If something failed after claiming, requeue the inflight item
         if claim_token:
             requeue_inflight(claim_token)
         raise
@@ -362,11 +384,11 @@ def import_next_paper_tasks(project_id: int) -> None:
 def _ensure_annotations_bucket():
     """Create the annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(_config.annotations_bucket):
-            client.make_bucket(_config.annotations_bucket)
-            print(f"Created bucket: {_config.annotations_bucket}")
+        if not client.bucket_exists(_app_config.minio.annotations_bucket):
+            client.make_bucket(_app_config.minio.annotations_bucket)
+            print(f"Created bucket: {_app_config.minio.annotations_bucket}")
     except Exception as e:
-        print(f"Error checking/creating bucket {_config.annotations_bucket}: {e}")
+        print(f"Error checking/creating bucket {_app_config.minio.annotations_bucket}: {e}")
 
 def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
     """Save completed annotation to MinIO bucket."""
@@ -392,13 +414,13 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
     try:
         _ensure_annotations_bucket()
         client.put_object(
-            bucket_name=_config.annotations_bucket,
+            bucket_name=_app_config.minio.annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json"
         )
-        print(f"Saved annotation to MinIO: {_config.annotations_bucket}/{object_name}")
+        print(f"Saved annotation to MinIO: {_app_config.minio.annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving annotation to MinIO: {e}")
         raise
@@ -407,11 +429,11 @@ def handle_completed_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> N
 def _ensure_human_annotations_bucket():
     """Create the human annotations bucket if it doesn't exist."""
     try:
-        if not client.bucket_exists(_config.human_annotations_bucket):
-            client.make_bucket(_config.human_annotations_bucket)
-            print(f"Created bucket: {_config.human_annotations_bucket}")
+        if not client.bucket_exists(_app_config.minio.human_annotations_bucket):
+            client.make_bucket(_app_config.minio.human_annotations_bucket)
+            print(f"Created bucket: {_app_config.minio.human_annotations_bucket}")
     except Exception as e:
-        print(f"Error checking/creating bucket {_config.human_annotations_bucket}: {e}")
+        print(f"Error checking/creating bucket {_app_config.minio.human_annotations_bucket}: {e}")
 
 
 def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]) -> None:
@@ -433,13 +455,13 @@ def handle_completed_human_task(task: Dict[str, Any], annotation: Dict[str, Any]
     try:
         _ensure_human_annotations_bucket()
         client.put_object(
-            bucket_name=_config.human_annotations_bucket,
+            bucket_name=_app_config.minio.human_annotations_bucket,
             object_name=object_name,
             data=BytesIO(data_bytes),
             length=len(data_bytes),
             content_type="application/json",
         )
-        print(f"Saved human annotation to MinIO: {_config.human_annotations_bucket}/{object_name}")
+        print(f"Saved human annotation to MinIO: {_app_config.minio.human_annotations_bucket}/{object_name}")
     except Exception as e:
         print(f"Error saving human annotation to MinIO: {e}")
         raise

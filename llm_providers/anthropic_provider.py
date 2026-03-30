@@ -4,8 +4,20 @@ Anthropic provider implementation using LangChain
 
 from typing import List, Dict, Any, Optional
 from langchain_anthropic import ChatAnthropic
-from langchain.schema import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from .base import BaseLLMProvider, Query, LLMResponse
+
+
+def _anthropic_temperature_top_p(
+    temperature: float, top_p: float
+) -> tuple[Optional[float], Optional[float]]:
+    """
+    Anthropic Claude 4+ rejects requests that send both ``temperature`` and ``top_p``.
+    Prefer ``temperature`` unless ``top_p`` is explicitly set below 1.0.
+    """
+    if top_p != 1.0:
+        return None, top_p
+    return temperature, None
 
 
 class AnthropicProvider(BaseLLMProvider):
@@ -19,16 +31,19 @@ class AnthropicProvider(BaseLLMProvider):
         
         Args:
             api_key: Anthropic API key
-            model: Default model (e.g., 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307')
+            model: Default model (e.g. ``claude-sonnet-4-6``, ``claude-opus-4-6`` — see Anthropic models docs)
             **kwargs: Additional Anthropic-specific configuration
         """
         super().__init__(api_key, model, **kwargs)
+        temp = kwargs.get("temperature", 0.7)
+        top_p = kwargs.get("top_p", 1.0)
+        t_llm, p_llm = _anthropic_temperature_top_p(temp, top_p)
         self.llm = ChatAnthropic(
             anthropic_api_key=api_key,
-            model_name=model or 'claude-3-sonnet-20240229',
-            temperature=kwargs.get('temperature', 0.7),
-            max_tokens=kwargs.get('max_tokens', 1000),
-            top_p=kwargs.get('top_p', 1.0),
+            model_name=model or "claude-sonnet-4-6",
+            temperature=t_llm,
+            max_tokens=kwargs.get("max_tokens", 1000),
+            top_p=p_llm,
         )
     
     def call_api(self, query: Query) -> LLMResponse:
@@ -55,14 +70,12 @@ class AnthropicProvider(BaseLLMProvider):
         if query.model and query.model != self.default_model:
             self.llm.model_name = query.model
         
-        # Update parameters if specified in query
-        if query.temperature != 0.7:
-            self.llm.temperature = query.temperature
+        t_llm, p_llm = _anthropic_temperature_top_p(query.temperature, query.top_p)
+        self.llm.temperature = t_llm
+        self.llm.top_p = p_llm
         if query.max_tokens:
             self.llm.max_tokens = query.max_tokens
-        if query.top_p != 1.0:
-            self.llm.top_p = query.top_p
-        
+
         # Make the API call
         response = self.llm.invoke(messages)
         
@@ -94,13 +107,14 @@ class AnthropicProvider(BaseLLMProvider):
         Returns:
             List of model names
         """
+        # Hints only; validate_query does not require models to be in this list.
         return [
-            'claude-3-opus-20240229',
-            'claude-3-sonnet-20240229',
-            'claude-3-haiku-20240307',
-            'claude-2.1',
-            'claude-2.0',
-            'claude-instant-1.2'
+            "claude-opus-4-6",
+            "claude-sonnet-4-6",
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-5-20250929",
+            "claude-opus-4-20250514",
+            "claude-sonnet-4-20250514",
         ]
     
     def validate_query(self, query: Query) -> bool:
@@ -116,13 +130,15 @@ class AnthropicProvider(BaseLLMProvider):
         if not query.prompt or not isinstance(query.prompt, str):
             return False
         
-        if query.model and query.model not in self.get_available_models():
+        if query.model is not None and not isinstance(query.model, str):
             return False
-        
+
         if query.temperature < 0 or query.temperature > 1:
             return False
         
-        if query.max_tokens and (query.max_tokens < 1 or query.max_tokens > 4096):
+        if query.max_tokens and (
+            query.max_tokens < 1 or query.max_tokens > 4096
+        ):
             return False
-        
+
         return True
