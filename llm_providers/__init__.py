@@ -12,6 +12,7 @@ from .anthropic_provider import AnthropicProvider
 from .huggingface_provider import HuggingFaceProvider
 from .ollama_provider import OllamaProvider
 from .vllm_provider import VLLMProvider
+from .vllm_native_provider import VLLMNativeProvider
 
 __all__ = [
     'BaseLLMProvider',
@@ -24,5 +25,6 @@ __all__ = [
     'AnthropicProvider',
     'HuggingFaceProvider',
     'OllamaProvider',
-    'VLLMProvider'
+    'VLLMProvider',
+    'VLLMNativeProvider',
 ]
