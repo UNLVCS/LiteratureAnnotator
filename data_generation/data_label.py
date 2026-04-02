@@ -55,9 +55,10 @@ def load_articles():
             
             # Read and decode the response data
             article_data = json.loads(response.read().decode("utf-8"))
-            # Expected shape:
-            # {"<PMID>": {"Title": ..., "Abstract": [...], ...}}
-            all_articles.append(article_data)
+            article_id = obj.object_name.split('/')[-1].split('.')[0]
+            # Match the original loader behavior in `main`: wrap the
+            # (flat) section dict using the filename stem as the PMID.
+            all_articles.append({article_id: article_data})
             print(f"Loaded article: {obj.object_name}")
         except Exception as e:
             print(f"Error loading {obj.object_name}: {e}")
