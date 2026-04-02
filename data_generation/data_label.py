@@ -27,36 +27,6 @@ bucket_name = app_config.minio.raw_articles_bucket
 pinecone_namespace = app_config.pinecone.namespace
 
 
-def _object_stem(object_name: str) -> str:
-    """Last path segment without extension, e.g. papers/99999.json -> 99999."""
-    return Path(object_name).stem
-
-
-def normalize_raw_article_json(data: dict, object_name: str) -> dict:
-    """
-    Chunker expects {"PMID": {"Title": ..., "Abstract": ..., ...}}.
-
-    Also accepts a flat article body {"Title": ..., ...} and wraps it using the
-    object filename stem as PMID (fixes TypeError when the first key is "Title").
-    """
-    if not isinstance(data, dict):
-        raise TypeError(f"{object_name}: root JSON must be an object")
-
-    if len(data) == 1:
-        sole_key, sole_val = next(iter(data.items()))
-        if isinstance(sole_val, dict) and "Title" in sole_val:
-            return data
-
-    if "Title" in data and isinstance(data["Title"], (str, list)):
-        pmid = _object_stem(object_name)
-        return {pmid: data}
-
-    raise ValueError(
-        f"{object_name}: expected {{'PMID': {{'Title': ...}}}} or a flat object "
-        f"with 'Title'; got top-level keys: {list(data.keys())}"
-    )
-
-
 def generate_embeddings(embed_text):
     load_dotenv()
     embeddings_obj = openai_client.embeddings.create(
@@ -85,9 +55,9 @@ def load_articles():
             
             # Read and decode the response data
             article_data = json.loads(response.read().decode("utf-8"))
-            all_articles.append(
-                normalize_raw_article_json(article_data, obj.object_name)
-            )
+            # Expected shape:
+            # {"<PMID>": {"Title": ..., "Abstract": [...], ...}}
+            all_articles.append(article_data)
             print(f"Loaded article: {obj.object_name}")
         except Exception as e:
             print(f"Error loading {obj.object_name}: {e}")
