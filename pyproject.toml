@@ -3,8 +3,14 @@ name = "literature-annotator"
 version = "0.1.0"
 description = "Workspace root for LiteratureAnnotator sub-packages."
 requires-python = ">=3.10"
-# Virtual root — no package is installed from here; deps come from workspace members.
-dependencies = []
+# Virtual root — pull in installable members so `uv sync` (without --all-packages)
+# populates .venv with pydantic, llm_providers, config, utilities, etc.
+dependencies = [
+    "literature-annotator-config",
+    "llm-providers",
+    "literature-annotator-utilities",
+    "literature-annotator-data-generation",
+]
 
 # ---------------------------------------------------------------------------
 # uv workspace: all sub-packages are synced into a single .venv at this root.
@@ -36,3 +42,9 @@ slurm = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+literature-annotator-config = { workspace = true }
+llm-providers = { workspace = true }
+literature-annotator-utilities = { workspace = true }
+literature-annotator-data-generation = { workspace = true }

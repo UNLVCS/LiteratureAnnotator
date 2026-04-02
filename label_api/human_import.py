@@ -163,3 +163,25 @@ def import_next_human_tasks(ls_human: "HumanLabellerSDK") -> None:
         print(f"[Human] Error importing paper {paper_id}: {e}")
         requeue_inflight_human(claim_token)
         raise
+
+
+def import_all_pending_human_tasks(ls_human: "HumanLabellerSDK", max_rounds: int = 500) -> int:
+    """
+    Drain the human Redis queue: one Label Studio task per queued paper_id.
+
+    ``import_next_human_tasks`` only pulls a single id per call; webhooks and the
+    periodic job add one at a time. On API startup, call this so a full
+    ``seed_human_queue`` batch becomes tasks without waiting on the 3-minute tick.
+    """
+    from utilities.queue_helpers import human_paper_queue_len
+
+    rounds = 0
+    while human_paper_queue_len() > 0 and rounds < max_rounds:
+        import_next_human_tasks(ls_human)
+        rounds += 1
+    remaining = human_paper_queue_len()
+    print(
+        f"[Human] Batch import finished: {rounds} task(s) created, "
+        f"human queue length now {remaining}"
+    )
+    return rounds
