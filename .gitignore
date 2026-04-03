@@ -1,6 +1,7 @@
 data/
 **/*.pyc
 __pycache__/
+*.egg-info/
 ignore_me
 *.ipynb
 **/*.ipynb
