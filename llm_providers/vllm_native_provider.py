@@ -10,7 +10,7 @@ Requirements:
 """
 
 from typing import List, Dict, Any, Optional
-from vllm import LLM, SamplingParams
+
 from .base import BaseLLMProvider, Query, LLMResponse
 
 
@@ -50,6 +50,14 @@ class VLLMNativeProvider(BaseLLMProvider):
         """
         super().__init__(api_key=api_key, model=model, **kwargs)
 
+        try:
+            from vllm import LLM, SamplingParams
+        except ModuleNotFoundError as e:
+            raise ImportError(
+                "Install vllm to use vllm_native (e.g. uv sync --group slurm, or pip install vllm)."
+            ) from e
+        self._SamplingParams = SamplingParams
+
         llm_kwargs: Dict[str, Any] = dict(
             model=model,
             tensor_parallel_size=tensor_parallel_size,
@@ -87,7 +95,7 @@ class VLLMNativeProvider(BaseLLMProvider):
         # Build the full prompt text
         prompt = self._build_prompt(query)
 
-        sampling_params = SamplingParams(
+        sampling_params = self._SamplingParams(
             temperature=query.temperature,
             top_p=query.top_p,
             max_tokens=query.max_tokens or 512,
