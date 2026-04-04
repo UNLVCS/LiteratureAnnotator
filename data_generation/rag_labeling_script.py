@@ -291,7 +291,7 @@ class RAGLabelingGenerator:
                     "error": str(e),
                     "chunks_used": 0
                 })
-            
+
             # Process final aggregation
             # try:
                 # final_prompt = self.criteria_prompts[-1]

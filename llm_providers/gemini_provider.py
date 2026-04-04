@@ -14,6 +14,29 @@ from .base import BaseLLMProvider, LLMResponse, Query
 _DEFAULT_MODEL = "gemini-2.0-flash"
 
 
+def _message_content_to_str(content: Any) -> str:
+    """Gemini / LangChain may return ``AIMessage.content`` as str or a list of blocks."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text") or block.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+                else:
+                    parts.append(_message_content_to_str(text))
+            else:
+                parts.append(str(block))
+        return "".join(parts)
+    return str(content)
+
+
 def _usage_from_response(response: Any) -> Dict[str, Any]:
     um = getattr(response, "usage_metadata", None)
     if um is None:
@@ -61,6 +84,7 @@ class GeminiProvider(BaseLLMProvider):
             self.llm.top_p = query.top_p
 
         response = self.llm.invoke(messages)
+        text = _message_content_to_str(getattr(response, "content", ""))
 
         usage = _usage_from_response(response)
 
@@ -75,7 +99,7 @@ class GeminiProvider(BaseLLMProvider):
             finish = rm.get("finish_reason")
 
         return LLMResponse(
-            content=response.content,
+            content=text,
             model=model_name,
             usage=usage,
             metadata=metadata,

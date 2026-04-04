@@ -8,15 +8,41 @@ LLM providers to ensure consistent JSON parsing across all providers.
 
 import json
 import re
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 
-def standardize_llm_response(raw_response: str) -> Tuple[Optional[Dict[str, Any]], str, bool]:
+def coerce_llm_content_to_str(raw: Any) -> str:
+    """
+    LangChain ``AIMessage.content`` may be a string or a list of blocks (e.g. Gemini
+    multimodal). Normalize to a single string before ``.strip()`` / JSON parsing.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list):
+        parts: list[str] = []
+        for block in raw:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text") or block.get("content")
+                if isinstance(text, str):
+                    parts.append(text)
+                else:
+                    parts.append(coerce_llm_content_to_str(text))
+            else:
+                parts.append(str(block))
+        return "".join(parts)
+    return str(raw)
+
+
+def standardize_llm_response(raw_response: Any) -> Tuple[Optional[Dict[str, Any]], str, bool]:
     """
     Standardize LLM response to ensure consistent JSON parsing.
     
     Args:
-        raw_response: The raw response string from the LLM provider
+        raw_response: Raw text from the LLM, or a list-shaped ``AIMessage.content``.
         
     Returns:
         Tuple of (parsed_json, cleaned_content, success_flag)
@@ -24,7 +50,8 @@ def standardize_llm_response(raw_response: str) -> Tuple[Optional[Dict[str, Any]
         - cleaned_content: The cleaned JSON string
         - success_flag: True if parsing was successful, False otherwise
     """
-    
+    raw_response = coerce_llm_content_to_str(raw_response)
+
     if not raw_response or not raw_response.strip():
         return None, "", False
     
@@ -140,7 +167,7 @@ def extract_criterion_result(parsed_json: Dict[str, Any], criterion_name: str) -
 def create_standardized_result(
     criterion: str,
     prompt: str,
-    raw_response: str,
+    raw_response: Any,
     chunks_used: int,
     provider: str = None
 ) -> Dict[str, Any]:

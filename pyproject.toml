@@ -58,9 +58,3 @@ slurm = [
 
 [tool.uv]
 package = false
-
-[tool.uv.sources]
-literature-annotator-config = { workspace = true }
-llm-providers = { workspace = true }
-literature-annotator-utilities = { workspace = true }
-literature-annotator-data-generation = { workspace = true }

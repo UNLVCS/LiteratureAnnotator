@@ -308,7 +308,7 @@ def process_paper_with_provider(paper_id: str, provider_name: str) -> Dict[str, 
                 "chunks_used": 0,
                 "full_context": full_context
             })
-            
+
     return results
 
 def worker_process(provider_name: str, provider_config: BaseLLMProvider, 
