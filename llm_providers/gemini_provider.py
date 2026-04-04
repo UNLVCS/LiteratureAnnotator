@@ -56,10 +56,15 @@ class GeminiProvider(BaseLLMProvider):
     """Gemini chat using ``langchain_google_genai.ChatGoogleGenerativeAI``."""
 
     def __init__(self, api_key: str, model: Optional[str] = None, **kwargs: Any):
+        if not (api_key and str(api_key).strip()):
+            raise ValueError(
+                "GeminiProvider requires a non-empty api_key "
+                "(set llm_providers.gemini.api_key or per-model api_key in your config)."
+            )
         super().__init__(api_key, model, **kwargs)
         self.llm = ChatGoogleGenerativeAI(
             model=model or _DEFAULT_MODEL,
-            google_api_key=api_key or None,
+            google_api_key=api_key,
             temperature=kwargs.get("temperature", 0.7),
             max_output_tokens=kwargs.get("max_tokens"),
             top_p=kwargs.get("top_p", 1.0),

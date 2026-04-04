@@ -34,24 +34,10 @@ class LLMProvidersDictMixin:
         from llm_providers.vllm_native_provider import VLLMNativeProvider
         from llm_providers.vllm_provider import VLLMProvider
 
-        _local_providers = ("ollama", "vllm", "vllm_native")
-
         providers: Dict[str, BaseLLMProvider] = {}
         for provider_name, provider_config in self._get_providers_config().items():
             for model_cfg, kwargs in provider_config.iter_models():
                 if model_cfg.skip:
-                    continue
-
-                kwargs = dict(kwargs)
-                # Reuse the Google AI Studio / Gemini API key from embeddings when unset.
-                if provider_name == "gemini" and not kwargs.get("api_key"):
-                    emb = getattr(self, "embeddings", None)
-                    if emb is not None and getattr(emb, "api_key", ""):
-                        kwargs["api_key"] = emb.api_key
-
-                # Local providers do not require a cloud API key.
-                if provider_name not in _local_providers and not kwargs.get("api_key"):
-                    print(f"Skipping {model_cfg.model} - no API key")
                     continue
 
                 try:
@@ -113,6 +99,8 @@ class LLMModelConfig(BaseModel):
         d = self.model_dump(exclude_none=True, exclude={"skip"})
         if d.get("api_key") is None and provider_api_key is not None:
             d["api_key"] = provider_api_key
+        if d.get("api_key") is None:
+            d["api_key"] = ""
         return d
 
 
