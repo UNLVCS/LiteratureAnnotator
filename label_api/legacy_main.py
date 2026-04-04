@@ -22,6 +22,7 @@ from label_api.lstudio_interfacer_sdk import LabellerSDK
 from utilities.queue_helpers import (
     ack_paper,
     claim_next_paper,
+    paper_queue_len,
     pop_paper_id,
     requeue_inflight,
 )
@@ -87,7 +88,7 @@ async def startup_event():
     LS.create_webhook(endpoint=webhook_url)
     LS_Human.create_webhook(endpoint=webhook_url)
 
-    import_next_paper_tasks(LS.project_id)
+    import_all_pending_paper_tasks(LS.project_id)
     import_all_pending_human_tasks(LS_Human)
 
     scheduler.add_job(periodic_paper_check, "interval", minutes=3, id="periodic_paper_check")
@@ -217,6 +218,26 @@ def periodic_human_paper_check():
             import_next_human_tasks(LS_Human)
     except Exception as e:
         print(f"[Periodic Human Check] Error: {e}")
+
+def import_all_pending_paper_tasks(project_id: int, max_rounds: int = 500) -> int:
+    """
+    Drain the main paper Redis queue: one Label Studio task per queued paper.
+
+    ``import_next_paper_tasks`` only pulls a single id per call; webhooks and the
+    periodic job add one at a time. On API startup, call this so a full
+    ``seed_queue`` batch becomes tasks without waiting on the 3-minute tick.
+    """
+    rounds = 0
+    while paper_queue_len() > 0 and rounds < max_rounds:
+        import_next_paper_tasks(project_id)
+        rounds += 1
+    remaining = paper_queue_len()
+    print(
+        f"[RAG] Batch import finished: {rounds} task(s) attempted, "
+        f"paper queue length now {remaining}"
+    )
+    return rounds
+
 
 def import_next_paper_tasks(project_id: int) -> None:
     """Pull the next paper from the queue and create Label Studio tasks. 
