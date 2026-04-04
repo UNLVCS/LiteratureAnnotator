@@ -56,6 +56,8 @@ class VectorDb:
         except PineconeApiException as e:
             if e.status == 409:
                 print("Index already exists")
+            else:
+                raise
 
         self.host = self.pc.describe_index(name=index_name).host
         self.index = self.pc.Index(index_name)
