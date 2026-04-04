@@ -1,7 +1,11 @@
 """
 Google Gemini provider (chat) via LangChain ``ChatGoogleGenerativeAI``.
+
+On rate limits (429 / RESOURCE_EXHAUSTED / quota), ``call_api`` retries the
+same invoke up to 3 times with a short delay between attempts.
 """
 
+import time
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -12,6 +16,20 @@ from .base import BaseLLMProvider, LLMResponse, Query
 
 # Default chat model: fast, widely available on the Gemini API / AI Studio.
 _DEFAULT_MODEL = "gemini-2.0-flash"
+
+_RATE_LIMIT_MAX_ATTEMPTS = 3
+_RATE_LIMIT_RETRY_DELAY_SEC = 0.75
+
+
+def _is_gemini_rate_limit(exc: BaseException) -> bool:
+    t = str(exc).lower()
+    if "429" in t or "resource_exhausted" in t:
+        return True
+    if "quota" in t and "exceed" in t:
+        return True
+    if "rate" in t and "limit" in t:
+        return True
+    return False
 
 
 def _message_content_to_str(content: Any) -> str:
@@ -88,7 +106,23 @@ class GeminiProvider(BaseLLMProvider):
         if query.top_p != 1.0:
             self.llm.top_p = query.top_p
 
-        response = self.llm.invoke(messages)
+        response: Any = None
+        last_exc: Optional[BaseException] = None
+        for attempt in range(_RATE_LIMIT_MAX_ATTEMPTS):
+            try:
+                response = self.llm.invoke(messages)
+                break
+            except Exception as e:
+                last_exc = e
+                if not _is_gemini_rate_limit(e):
+                    raise
+                if attempt >= _RATE_LIMIT_MAX_ATTEMPTS - 1:
+                    raise last_exc from e
+                time.sleep(_RATE_LIMIT_RETRY_DELAY_SEC)
+
+        if response is None:
+            raise last_exc if last_exc else RuntimeError("Gemini invoke returned no response")
+
         text = _message_content_to_str(getattr(response, "content", ""))
 
         usage = _usage_from_response(response)
