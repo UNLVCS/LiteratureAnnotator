@@ -7,8 +7,10 @@ langchain-core>=0.1.0
 langchain-openai>=0.1.0
 langchain-pinecone>=0.1.0
 
-# OpenAI (for embeddings)
+# OpenAI (for embeddings) + Voyage (default in .env.yaml.example) + optional Gemini
 openai>=1.0.0
+voyageai>=0.3.0
+langchain-google-genai>=4.0.0
 
 # Pinecone (vector database)
 pinecone>=3.0.0

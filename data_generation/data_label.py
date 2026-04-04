@@ -9,13 +9,13 @@ if parent_dir not in sys.path:
 from chnker import Chunker
 from config.app_config import load_app_config
 from utilities.vector_db import VectorDb
+from utilities.langchain_embeddings import build_langchain_embeddings
 import json
-import openai
 from dotenv import load_dotenv
 from minio import Minio
 
 app_config = load_app_config()
-openai_client = openai.OpenAI(api_key=app_config.embeddings.api_key)
+_embedder = build_langchain_embeddings(app_config.embeddings)
 
 client = Minio(
     app_config.minio.url,
@@ -28,13 +28,7 @@ pinecone_namespace = app_config.pinecone.namespace
 
 def generate_embeddings(embed_text):
     load_dotenv()
-    embeddings_obj = openai_client.embeddings.create(
-        model=app_config.embeddings.model,
-        input=embed_text,
-        encoding_format="float",
-        dimensions=app_config.embeddings.dimensions,
-    )
-    return embeddings_obj
+    return _embedder.embed_query(embed_text)
 
 
 def load_articles():
@@ -82,9 +76,7 @@ if __name__ == "__main__":
         
         for i, chunk in enumerate(chnkd_article['chunks']):
 
-            response = generate_embeddings(chunk)
-            response = json.loads(response.model_dump_json())
-            embedding = response['data'][0]['embedding']
+            embedding = generate_embeddings(chunk)
                 
             record = {
                 "id" : f"{chnkd_article['id']}-chunk{i}",

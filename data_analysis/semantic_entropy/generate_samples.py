@@ -4,8 +4,9 @@ from typing import Any, Dict, List
 
 from minio import Minio
 from pinecone import Pinecone
-from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+
+from utilities.langchain_embeddings import build_langchain_embeddings
 
 from config.app_config import load_app_config, AppConfig
 from data_generation.response_standardizer import standardize_llm_response
@@ -51,11 +52,7 @@ class RAGLabelingGenerator:
         pc = Pinecone(api_key=config.pinecone.api_key)
         pinecone_index = pc.Index(config.pinecone.index_name)
         
-        self.embedder = OpenAIEmbeddings(
-            model=config.embeddings.model,
-            api_key=config.embeddings.api_key,
-            dimensions=config.embeddings.dimensions,
-        )
+        self.embedder = build_langchain_embeddings(config.embeddings)
         self.vector_store = PineconeVectorStore(
             index=pinecone_index,
             embedding=self.embedder,

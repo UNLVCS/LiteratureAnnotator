@@ -42,7 +42,7 @@ class VectorDb:
         if index_name is None:
             index_name = "adbm"
         if embedding_dimensions is None:
-            embedding_dimensions = 1536
+            embedding_dimensions = 1024
         
         self.pc = Pinecone(api_key=api_key)
 

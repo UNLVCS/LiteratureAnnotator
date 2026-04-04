@@ -78,11 +78,22 @@ class LabelStudioConfig(BaseModel):
 
 
 class EmbeddingsConfig(BaseModel):
-    """OpenAI embeddings configuration."""
+    """
+    Text embedding backend for Pinecone / LangChain retrieval.
 
+    * ``voyage`` (default) — `Voyage AI <https://www.voyageai.com/>`__: Anthropic’s
+      recommended embedding partner for RAG with Claude (Claude has no embedding API;
+      use ``llm_providers.anthropic`` for chat and a Voyage key here).
+    * ``openai`` — OpenAI embedding models.
+    * ``gemini`` — Google `Gemini embedding models <https://ai.google.dev/gemini-api/docs/embeddings>`__
+      via ``langchain_google_genai``; ``api_key`` is a Google AI Studio / Gemini API key
+      (``GOOGLE_API_KEY`` / ``GEMINI_API_KEY`` env vars are also honored if unset).
+    """
+
+    provider: str = "voyage"
     api_key: str = ""
-    model: str = "text-embedding-ada-002"
-    dimensions: int = 1536
+    model: str = "voyage-3-large"
+    dimensions: int = 1024
 
 
 class SeedConfig(BaseModel):

@@ -19,8 +19,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from minio import Minio
-from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+
+from utilities.langchain_embeddings import build_langchain_embeddings
 
 from response_standardizer import standardize_llm_response
 
@@ -68,11 +69,7 @@ def initialize_shared_resources():
     
     if _embedder is None:
         _vdb = VectorDb(pinecone_config=_app_config.pinecone)
-        _embedder = OpenAIEmbeddings(
-            model=_app_config.embeddings.model,
-            api_key=_app_config.embeddings.api_key,
-            dimensions= None if _app_config.embeddings.model == "text-embedding-ada-002" else _app_config.embeddings.dimensions,
-        )
+        _embedder = build_langchain_embeddings(_app_config.embeddings)
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),
             embedding=_embedder,

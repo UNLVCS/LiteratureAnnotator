@@ -3,8 +3,19 @@ name = "literature-annotator"
 version = "0.1.0"
 description = "Workspace root for LiteratureAnnotator sub-packages."
 requires-python = ">=3.10"
-# Virtual root — no package is installed from here; deps come from workspace members.
-dependencies = []
+# Virtual root — no package is installed from here. Listing members ensures `uv sync`
+# installs the union of all workspace dependencies into the root `.venv` (otherwise
+# only the empty root project is synced and imports like `pydantic` are missing).
+dependencies = [
+    "literature-annotator-config",
+    "literature-annotator-data-analysis",
+    "literature-annotator-data-download",
+    "literature-annotator-data-generation",
+    "literature-annotator-label-api",
+    "literature-annotator-utilities",
+    "literature-annotator-weak-supervision",
+    "llm_providers",
+]
 
 # ---------------------------------------------------------------------------
 # uv workspace: all sub-packages are synced into a single .venv at this root.
@@ -20,6 +31,17 @@ members = [
     "label_api",        # FastAPI + Label Studio webhook server
     "weak_supervision", # Snorkel weak-supervision experiments
 ]
+
+# Map PyPI-style dependency names to workspace members (required when members depend on each other).
+[tool.uv.sources]
+literature-annotator-config = { workspace = true }
+literature-annotator-data-analysis = { workspace = true }
+literature-annotator-data-download = { workspace = true }
+literature-annotator-data-generation = { workspace = true }
+literature-annotator-label-api = { workspace = true }
+literature-annotator-utilities = { workspace = true }
+literature-annotator-weak-supervision = { workspace = true }
+llm_providers = { workspace = true }
 
 # ---------------------------------------------------------------------------
 # Dependency groups — install with: uv sync --group <name>

@@ -1,15 +1,29 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "literature-annotator-utilities"
 version = "0.1.0"
 description = "Queue and vector DB utility scripts."
 requires-python = ">=3.10"
 dependencies = [
+  "langchain-core>=0.1.0",
+  "langchain-google-genai>=4.0.0",
+  "langchain-openai>=0.1.0",
+  "literature-annotator-config",
+  "openai>=1.0.0",
   "pinecone>=3.0.0",
   "pydantic>=2.0.0",
   "pydantic-settings>=2.0.0",
   "python-dotenv>=1.0.0",
   "redis>=5.0.0",
+  "voyageai>=0.3.0",
 ]
+
+[tool.setuptools]
+package-dir = {"" = ".."}
+packages = ["utilities"]
 
 [tool.uv]
 package = false

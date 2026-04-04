@@ -17,8 +17,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from response_standardizer import standardize_llm_response
 from llm_providers.base import BaseLLMProvider, Query, LLMResponse
-from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+
+from utilities.langchain_embeddings import build_langchain_embeddings
 
 from utilities.vector_db import VectorDb
 from utilities.queue_helpers import (
@@ -43,11 +44,7 @@ class RAGLabelingGenerator:
         
         # Setup vector store and embeddings
         self.vdb = VectorDb(pinecone_config=config.pinecone)
-        self.embedder = OpenAIEmbeddings(
-            model=config.embeddings.model,
-            api_key=config.embeddings.api_key,
-            dimensions=config.embeddings.dimensions,
-        )
+        self.embedder = build_langchain_embeddings(config.embeddings)
         self.vector_store = PineconeVectorStore(
             index=self.vdb.__get_index__(),
             embedding=self.embedder,

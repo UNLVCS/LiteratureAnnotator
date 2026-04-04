@@ -8,6 +8,7 @@ dependencies = [
   "langchain-core>=0.1.0",
   "langchain-openai>=0.1.0",
   "langchain-pinecone>=0.1.0",
+  "literature-annotator-utilities",
   "minio>=7.2.0",
   "openai>=1.0.0",
   "pinecone>=3.0.0",
@@ -16,6 +17,7 @@ dependencies = [
   "redis>=5.0.0",
   "requests>=2.31.0",
   "typing-extensions>=4.0.0",
+  "voyageai>=0.3.0",
 ]
 
 [project.optional-dependencies]

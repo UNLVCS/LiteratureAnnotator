@@ -23,8 +23,10 @@ langchain-core>=0.1.0
 langchain-openai>=0.1.0
 langchain-pinecone>=0.1.0
 
-# OpenAI (for embeddings)
+# OpenAI (for embeddings) + Voyage + optional Gemini (embeddings.provider in .env.yaml)
 openai>=1.0.0
+voyageai>=0.3.0
+langchain-google-genai>=4.0.0
 
 # Environment variables
 python-dotenv>=1.0.0

@@ -9,8 +9,9 @@ import html
 import json
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
-from langchain_openai import OpenAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
+
+from utilities.langchain_embeddings import build_langchain_embeddings
 
 from label_api.criteria import CRITERIA_PROMPTS, CRITERION_NAMES
 
@@ -32,11 +33,7 @@ def _get_vector_store():
 
         app_config = load_app_config()
         _vdb = VectorDb(pinecone_config=app_config.pinecone)
-        _embedder = OpenAIEmbeddings(
-            model=app_config.embeddings.model,
-            api_key=app_config.embeddings.api_key,
-            dimensions = None if app_config.embeddings.model == "text-embedding-ada-002" else app_config.embeddings.dimensions,
-        )
+        _embedder = build_langchain_embeddings(app_config.embeddings)
         _vector_store = PineconeVectorStore(
             index=_vdb.__get_index__(),
             embedding=_embedder,
