@@ -16,7 +16,7 @@ from minio import Minio
 from pydantic import BaseModel
 
 from config.app_config import load_app_config, AppConfig
-from label_api.human_import import import_next_human_tasks
+from label_api.human_import import import_all_pending_human_tasks, import_next_human_tasks
 from label_api.human_labeller_sdk import HumanLabellerSDK
 from label_api.lstudio_interfacer_sdk import LabellerSDK
 from utilities.queue_helpers import (
@@ -88,7 +88,7 @@ async def startup_event():
     LS_Human.create_webhook(endpoint=webhook_url)
 
     import_next_paper_tasks(LS.project_id)
-    import_next_human_tasks(LS_Human)
+    import_all_pending_human_tasks(LS_Human)
 
     scheduler.add_job(periodic_paper_check, "interval", minutes=3, id="periodic_paper_check")
     scheduler.add_job(periodic_human_paper_check, "interval", minutes=3, id="periodic_human_paper_check")

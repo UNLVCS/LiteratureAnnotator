@@ -26,6 +26,7 @@ client = Minio(
 bucket_name = app_config.minio.raw_articles_bucket
 pinecone_namespace = app_config.pinecone.namespace
 
+
 def generate_embeddings(embed_text):
     load_dotenv()
     return _embedder.embed_query(embed_text)
@@ -47,8 +48,10 @@ def load_articles():
             response = client.get_object(bucket_name=bucket_name, object_name=obj.object_name)
             
             # Read and decode the response data
-            article_data = json.loads(response.read().decode('utf-8'))
+            article_data = json.loads(response.read().decode("utf-8"))
             article_id = obj.object_name.split('/')[-1].split('.')[0]
+            # Match the original loader behavior in `main`: wrap the
+            # (flat) section dict using the filename stem as the PMID.
             all_articles.append({article_id: article_data})
             print(f"Loaded article: {obj.object_name}")
         except Exception as e:

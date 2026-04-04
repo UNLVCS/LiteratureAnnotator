@@ -27,6 +27,7 @@ class LLMProvidersDictMixin:
         """Instantiate providers and return model name -> provider map."""
         from llm_providers.anthropic_provider import AnthropicProvider
         from llm_providers.base import BaseLLMProvider
+        from llm_providers.gemini_provider import GeminiProvider
         from llm_providers.huggingface_provider import HuggingFaceProvider
         from llm_providers.ollama_provider import OllamaProvider
         from llm_providers.openai_provider import OpenAIProvider
@@ -40,6 +41,14 @@ class LLMProvidersDictMixin:
             for model_cfg, kwargs in provider_config.iter_models():
                 if model_cfg.skip:
                     continue
+
+                kwargs = dict(kwargs)
+                # Reuse the Google AI Studio / Gemini API key from embeddings when unset.
+                if provider_name == "gemini" and not kwargs.get("api_key"):
+                    emb = getattr(self, "embeddings", None)
+                    if emb is not None and getattr(emb, "api_key", ""):
+                        kwargs["api_key"] = emb.api_key
+
                 # Local providers do not require a cloud API key.
                 if provider_name not in _local_providers and not kwargs.get("api_key"):
                     print(f"Skipping {model_cfg.model} - no API key")
@@ -50,6 +59,8 @@ class LLMProvidersDictMixin:
                         providers[model_cfg.model] = OpenAIProvider(**kwargs)
                     elif provider_name == "anthropic":
                         providers[model_cfg.model] = AnthropicProvider(**kwargs)
+                    elif provider_name == "gemini":
+                        providers[model_cfg.model] = GeminiProvider(**kwargs)
                     elif provider_name == "huggingface":
                         providers[model_cfg.model] = HuggingFaceProvider(**kwargs)
                     elif provider_name == "vllm":

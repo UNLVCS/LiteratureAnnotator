@@ -9,6 +9,7 @@ from .base import BaseLLMProvider, Query, LLMResponse
 from .config_models import LLMModelConfig, LLMProviderConfig, LLMProvidersConfig
 from .openai_provider import OpenAIProvider
 from .anthropic_provider import AnthropicProvider
+from .gemini_provider import GeminiProvider
 from .huggingface_provider import HuggingFaceProvider
 from .ollama_provider import OllamaProvider
 from .vllm_provider import VLLMProvider
@@ -23,6 +24,7 @@ __all__ = [
     'LLMProvidersConfig',
     'OpenAIProvider',
     'AnthropicProvider',
+    'GeminiProvider',
     'HuggingFaceProvider',
     'OllamaProvider',
     'VLLMProvider',

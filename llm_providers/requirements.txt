@@ -6,6 +6,7 @@ langchain-core>=0.1.0
 langchain-openai>=0.1.0
 langchain-anthropic>=0.1.0
 langchain-huggingface>=0.1.0
+langchain-google-genai>=4.0.0
 
 # Additional dependencies
 pydantic>=2.0.0
@@ -18,7 +19,6 @@ transformers>=4.20.0
 accelerate>=0.20.0
 
 # Optional: For additional providers
-# langchain-google-genai>=0.1.0  # For Google Gemini
 # langchain-community>=0.1.0     # For additional community providers
 
 # Note: OLLAMA provider uses requests library (already included above)
