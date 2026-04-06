@@ -7,6 +7,7 @@ from config.base import (
 )
 from config.app_config import (
     AppConfig,
+    BiocDownloadSettings,
     load_app_config,
     get_app_config,
 )
@@ -22,6 +23,7 @@ __all__ = [
     "load_config_from_json_file",
     "load_config_from_yaml_file",
     "AppConfig",
+    "BiocDownloadSettings",
     "load_app_config",
     "get_app_config",
     "LLMModelConfig",

@@ -14,7 +14,7 @@ Usage:
 from pathlib import Path
 from typing import Dict, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from config.llm_providers_config import LLMProviderConfig, LLMProvidersDictMixin
 
@@ -92,6 +92,36 @@ class SeedConfig(BaseModel):
     human_papers_file: str = "utilities/human_papers.txt"
 
 
+class BiocDownloadSettings(BaseModel):
+    """BioC downloader settings from the bioc_download: block of .env.yaml."""
+
+    download_bucket: str = "raw-pubmed-articles"
+    ncbi_api_key: Optional[str] = None
+    ncbi_email: Optional[str] = None
+    mesh_query: Optional[str] = None
+    mesh_ids: list[str] = Field(default_factory=list)
+    mesh_terms: list[str] = Field(default_factory=list)
+    major_topic_only: bool = True
+    max_results: int = 100
+    batch_size: int = 25
+    request_delay: float = 0.34
+    full_text: bool = False
+    full_text_fallback: bool = True
+    object_prefix: str = ""
+
+    @field_validator("mesh_query", "ncbi_api_key", "ncbi_email", mode="before")
+    @classmethod
+    def _empty_str_to_none(cls, v: object) -> object:
+        return None if v == "" else v
+
+    @field_validator("mesh_terms", "mesh_ids", mode="before")
+    @classmethod
+    def _parse_str_list(cls, v: object) -> object:
+        if isinstance(v, str):
+            return [t.strip() for t in v.split(",") if t.strip()] if v.strip() else []
+        return v
+
+
 class AppConfig(LLMProvidersDictMixin, BaseModel):
     """
     Unified application configuration.
@@ -105,6 +135,7 @@ class AppConfig(LLMProvidersDictMixin, BaseModel):
     label_studio: LabelStudioConfig = Field(default_factory=LabelStudioConfig)
     embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
     seed: SeedConfig = Field(default_factory=SeedConfig)
+    bioc_download: BiocDownloadSettings = Field(default_factory=BiocDownloadSettings)
     llm_providers: Dict[str, LLMProviderConfig] = Field(default_factory=dict)
 
     def _get_providers_config(self) -> Dict[str, LLMProviderConfig]:
