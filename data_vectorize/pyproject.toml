@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "literature-annotator-data-vectorize"
+version = "0.1.0"
+description = "Vector DB retrieval and MinIO ingestion for LiteratureAnnotator."
+requires-python = ">=3.10"
+dependencies = [
+  "literature-annotator-config",
+  "minio>=7.2.0",
+  "openai>=1.0.0",
+  "pinecone>=3.0.0",
+  "pydantic>=2.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = ".."}
+packages = ["data_vectorize"]
+
+[tool.uv.sources]
+literature-annotator-config = { workspace = true }
