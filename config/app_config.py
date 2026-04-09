@@ -46,9 +46,11 @@ class MinioConfig(BaseModel):
     secret_key: str = ""
     bucket_name: str = "v1-criteria-classified-articles"
     raw_articles_bucket: str = "raw-pubmed-articles"
+    synthetic_data_bucket: str = "rag-labeled-data"
     secure: bool = False
     human_annotations_bucket: str = "human-annotations"
     annotations_bucket: str = "completed-annotations"
+    output_prefix: str = ""
 
 
 class PineconeConfig(BaseModel):

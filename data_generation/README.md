@@ -80,6 +80,25 @@ excerpt for the question it is answering, rather than the full text. The vector 
 be swapped for a full-text fallback by passing the entire paper text as a single chunk
 during ingestion.
 
+## LLM providers
+
+All providers implement the same `BaseLLMProvider` interface from `llm_providers`.
+The labelers call `provider.call_api_batch(queries)` to send all 6 criterion queries
+for a paper in one shot. The batching mechanism differs per provider:
+
+| Provider | Type key | `call_api_batch` mechanism |
+|---|---|---|
+| `OpenAIProvider` | `openai` | LangChain `llm.batch()` — parallel threads, results in order. Retries with exponential backoff on rate-limit / 429 errors. |
+| `AnthropicProvider` | `anthropic` | LangChain `llm.batch()` — parallel threads. Retries with exponential backoff. Automatically drops `top_p` when `temperature` is set (Claude 4+ constraint). |
+| `VLLMProvider` | `vllm` | LangChain `llm.batch()` — parallel HTTP requests to a running vLLM server. |
+| `VLLMNativeProvider` | `vllm_native` | `llm.generate(prompts)` — **true GPU batch**: all prompts submitted in one call so vLLM can maximally fill its KV-cache. Best throughput for local models. |
+| `OllamaProvider` | `ollama` | `ThreadPoolExecutor` — up to 6 concurrent HTTP requests to the local Ollama server. Only registered if `check_server_status()` returns True at startup. |
+| `HuggingFaceProvider` | `huggingface` | LangChain `llm.batch()` — batched inference via HuggingFace pipeline. |
+
+The base class default for providers that don't override `call_api_batch` is a
+sequential loop over `call_api` — so any future provider is safe without
+implementing batching explicitly.
+
 ## Configuration
 
 All values come from `.env.yaml` at the workspace root.
@@ -101,23 +120,36 @@ minio:
   secret_key: "..."
   synthetic_data_bucket: "rag-labeled-data"   # labeling output
   raw_articles_bucket: "raw-pubmed-articles"  # ingestion input
+  output_prefix: ""                           # optional path prefix within the output bucket
 
 redis:
   url: "redis://localhost:6379/0"
   paper_queue: "q:papers:v1"
 
 llm_providers:
-  meta-llama/Llama-3.1-8B-Instruct:
-    type: vllm_native
-    base_url: "http://localhost:8000/v1"
-  gpt-4o-mini:
-    type: openai
-    api_key: "..."
+  openai:
+    api_key: "sk-..."
+    models:
+      - model: "gpt-4o-mini"
+  anthropic:
+    api_key: "sk-ant-..."
+    models:
+      - model: "claude-sonnet-4-6"
+  vllm_native:
+    models:
+      - model: "meta-llama/Llama-3.1-8B-Instruct"
+        tensor_parallel_size: 1
+        gpu_memory_utilization: 0.90
+  ollama:
+    models:
+      - model: "llama3.1"
+        base_url: "http://localhost:11434"
 ```
 
 ## Output format
 
-Each result is a JSON file at `{provider}/{paper_id}.json` in the output MinIO bucket:
+Each result is a JSON file at `{output_prefix}/{provider}/{paper_id}.json` in
+`minio.synthetic_data_bucket`:
 
 ```json
 {
@@ -142,7 +174,7 @@ Each result is a JSON file at `{provider}/{paper_id}.json` in the output MinIO b
 |---|---|
 | `data_vectorize` | `VectorDb` — Pinecone client and index handle |
 | `utilities` | Redis queue helpers (`queue_helpers`) and criteria prompts (`criteria`) |
-| `llm_providers` | Provider abstraction (`BaseLLMProvider`, `Query`) |
-| `config` | `.env.yaml` config models |
+| `llm_providers` | Provider abstraction (`BaseLLMProvider`, `Query`, all provider classes) |
+| `config` | `.env.yaml` config models; `instantiate_provider` used by worker processes |
 | `langchain-pinecone` | `PineconeVectorStore` for metadata-filtered retrieval |
 | `langchain-openai` | `OpenAIEmbeddings` for LangChain retriever embedding |
