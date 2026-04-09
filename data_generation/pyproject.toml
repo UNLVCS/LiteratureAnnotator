@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "RAG-based data labeling and generation scripts."
 requires-python = ">=3.10"
 dependencies = [
+  "literature-annotator-data-vectorize",
   "langchain>=0.1.0",
   "langchain-core>=0.1.0",
   "langchain-openai>=0.1.0",
@@ -26,3 +27,6 @@ providers = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+literature-annotator-data-vectorize = { workspace = true }
