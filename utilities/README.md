@@ -34,6 +34,10 @@ uv run python -m utilities.queue_status --ids
 
 # Move stuck in-flight papers back to pending
 uv run python -m utilities.queue_status --fix
+
+# Clear a queue (prompts for confirmation)
+uv run python -m utilities.queue_status --clear labeler
+uv run python -m utilities.queue_status --clear all --yes   # skip prompt
 ```
 
 ## Configuration
@@ -153,10 +157,31 @@ Prints live queue depths for both the RAG and human labeling pipelines,
 annotation buffer size, and Redis connection info.
 
 ```bash
-uv run python -m utilities.queue_status           # summary
-uv run python -m utilities.queue_status --ids     # include paper IDs in each queue
-uv run python -m utilities.queue_status --fix     # move stuck in-flight papers → pending
+uv run python -m utilities.queue_status                      # summary
+uv run python -m utilities.queue_status --ids                # include paper IDs in each queue
+uv run python -m utilities.queue_status --fix                # move stuck in-flight papers → pending
+uv run python -m utilities.queue_status --clear labeler      # clear RAG queue (with prompt)
+uv run python -m utilities.queue_status --clear all --yes    # clear everything, no prompt
 ```
+
+`--clear` targets:
+
+| Target | Redis keys deleted (names from `.env.yaml` `redis:` block) |
+|---|---|
+| `labeler` | `paper_queue`, `paper_processing`, `paper_dedup_set` |
+| `human` | `human_paper_queue`, `human_processing_queue`, `human_dedup_set` |
+| `generated` | `generated_set`, `completed_papers_queue` |
+| `annotations` | `ann_queue` (unflushed annotations will be lost) |
+| `all` | All of the above |
+
+The actual Redis key strings come from the `redis:` block in `.env.yaml` — for example,
+`paper_queue: "q:papers:v1"` means `--clear labeler` deletes the key `q:papers:v1` (along
+with `q:papers:processing:v1` and `s:papers:enqueued:v1`). If you've overridden any names
+in `.env.yaml`, those overridden names are what gets deleted.
+
+Pass `--yes` to skip the confirmation prompt (useful in scripts). Without it, the tool
+prints a summary of exactly which keys and how many items will be deleted, then waits for
+`yes` before proceeding.
 
 Example output:
 

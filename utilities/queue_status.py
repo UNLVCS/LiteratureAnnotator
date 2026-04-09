@@ -110,6 +110,97 @@ def fix_inflight(queue: PaperQueue) -> None:
         print("  Nothing stuck in in-flight queue.")
 
 
+# ---------------------------------------------------------------------------
+# Clear
+# ---------------------------------------------------------------------------
+
+_CLEAR_TARGETS = {
+    "labeler": "RAG labeler queue (pending, in-flight, dedup set)",
+    "human":   "human labeling queue (pending, in-flight, dedup set)",
+    "generated": "generated/completed set",
+    "annotations": "annotations buffer",
+    "all":     "ALL queues and sets listed above",
+}
+
+
+def _clear_summary(queue: PaperQueue, target: str) -> dict[str, int]:
+    """Return key→count for every Redis key that *target* would delete."""
+    r   = queue.redis
+    cfg = queue.config
+    counts: dict[str, int] = {}
+
+    def _add(key: str, kind: str) -> None:
+        n = r.llen(key) if kind == "list" else r.scard(key)
+        if n:
+            counts[key] = n
+
+    if target in ("labeler", "all"):
+        _add(cfg.paper_queue,       "list")
+        _add(cfg.paper_processing,  "list")
+        _add(cfg.paper_dedup_set,   "set")
+
+    if target in ("human", "all"):
+        _add(cfg.HUMAN_PAPER_QUEUE, "list")
+        _add(cfg.HUMAN_PROCESSING_Q,"list")
+        _add(cfg.HUMAN_DEDUP_SET,   "set")
+
+    if target in ("generated", "all"):
+        _add(cfg.generated_set,          "set")
+        _add(cfg.completed_papers_queue, "list")
+
+    if target in ("annotations", "all"):
+        _add(cfg.ann_queue, "list")
+
+    return counts
+
+
+def clear_queues(queue: PaperQueue, target: str, confirmed: bool = False) -> None:
+    """Delete the Redis keys belonging to *target*.
+
+    Prints a summary and prompts for confirmation unless *confirmed* is True
+    (i.e. ``--yes`` was passed on the CLI).
+    """
+    counts = _clear_summary(queue, target)
+
+    if not counts:
+        print(f"  Nothing to clear for target '{target}'.")
+        return
+
+    print(f"\n  The following Redis keys will be permanently deleted:\n")
+    total = 0
+    for key, n in counts.items():
+        print(f"    {key}  ({n} item{'s' if n != 1 else ''})")
+        total += n
+    print(f"\n  Total: {total} item{'s' if total != 1 else ''} across {len(counts)} key{'s' if len(counts) != 1 else ''}.")
+
+    if not confirmed:
+        try:
+            answer = input("\n  Type 'yes' to confirm: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print("\n  Aborted.")
+            return
+        if answer != "yes":
+            print("  Aborted.")
+            return
+
+    r   = queue.redis
+    cfg = queue.config
+
+    if target in ("labeler", "all"):
+        r.delete(cfg.paper_queue, cfg.paper_processing, cfg.paper_dedup_set)
+
+    if target in ("human", "all"):
+        r.delete(cfg.HUMAN_PAPER_QUEUE, cfg.HUMAN_PROCESSING_Q, cfg.HUMAN_DEDUP_SET)
+
+    if target in ("generated", "all"):
+        r.delete(cfg.generated_set, cfg.completed_papers_queue)
+
+    if target in ("annotations", "all"):
+        r.delete(cfg.ann_queue)
+
+    print(f"\n  ✓ Cleared '{target}'.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Show LiteratureAnnotator queue status."
@@ -121,6 +212,20 @@ def main() -> None:
     parser.add_argument(
         "--fix", action="store_true",
         help="Move stuck in-flight papers back to the pending queue."
+    )
+    parser.add_argument(
+        "--clear",
+        choices=list(_CLEAR_TARGETS),
+        metavar="TARGET",
+        help=(
+            "Delete all Redis keys for the given target. "
+            f"Choices: {', '.join(_CLEAR_TARGETS)}. "
+            "Prompts for confirmation unless --yes is also passed."
+        ),
+    )
+    parser.add_argument(
+        "--yes", action="store_true",
+        help="Skip the confirmation prompt when used with --clear."
     )
     args = parser.parse_args()
 
@@ -135,6 +240,13 @@ def main() -> None:
         print()
         print("Updated status:")
         print_status(queue, show_ids=args.ids)
+
+    if args.clear:
+        print(f"── Clearing: {_CLEAR_TARGETS[args.clear]} {'─' * 10}")
+        clear_queues(queue, args.clear, confirmed=args.yes)
+        print()
+        print("Updated status:")
+        print_status(queue)
 
 
 if __name__ == "__main__":
