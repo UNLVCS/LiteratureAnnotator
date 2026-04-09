@@ -99,7 +99,7 @@ S3-compatible object storage for raw articles, classification results, and expor
 | `access_key` | `""` | S3 access key (`MINIO_ROOT_USER` or created user) |
 | `secret_key` | `""` | S3 secret key |
 | `bucket_name` | `v1-criteria-classified-articles` | RAG classification results bucket |
-| `raw_articles_bucket` | `raw-pubmed-articles` | Source articles (PubMed XML / PDFs) |
+| `raw_articles_bucket` | `raw-pubmed-articles` | Source articles — single source of truth used by downloader, ingester, and queue seeder |
 | `secure` | `false` | Enable HTTPS / TLS verification |
 | `human_annotations_bucket` | `human-annotations` | Completed human LS annotations |
 | `annotations_bucket` | `completed-annotations` | Completed RAG-annotation tasks |

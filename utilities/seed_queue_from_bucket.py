@@ -8,7 +8,7 @@ double-enqueuing the same paper regardless of how many times this
 script is run.
 
 When ``--bucket`` and ``--prefix`` are omitted the script falls back to
-``bioc_download.download_bucket`` and ``bioc_download.object_prefix`` from
+``minio.raw_articles_bucket`` and ``bioc_download.object_prefix`` from
 ``.env.yaml``, so running it right after a download job requires no extra flags.
 
 Usage (from workspace root):
@@ -118,22 +118,23 @@ def seed_from_bucket(
 
 
 def _parse_args(argv=None) -> argparse.Namespace:
-    # Load config first so we can use bioc_download values as defaults.
+    # Load config first so we can use config values as defaults.
     app_config = load_app_config()
-    bioc = app_config.bioc_download
+    default_bucket = app_config.minio.raw_articles_bucket
+    default_prefix = app_config.bioc_download.object_prefix or ""
 
     parser = argparse.ArgumentParser(
         description=(
             "Seed a labeling queue from the contents of a MinIO bucket. "
-            "Defaults to bioc_download.download_bucket / object_prefix from .env.yaml."
+            "Defaults to minio.raw_articles_bucket / bioc_download.object_prefix from .env.yaml."
         ),
     )
     parser.add_argument(
         "--bucket",
-        default=bioc.download_bucket,
+        default=default_bucket,
         help=(
             f"MinIO bucket to read paper IDs from "
-            f"(default from .env.yaml bioc_download: {bioc.download_bucket!r})."
+            f"(default from .env.yaml minio: {default_bucket!r})."
         ),
     )
     parser.add_argument(
@@ -144,10 +145,10 @@ def _parse_args(argv=None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--prefix",
-        default=bioc.object_prefix or "",
+        default=default_prefix,
         help=(
             f"Only consider objects whose names start with this prefix "
-            f"(default from .env.yaml bioc_download: {bioc.object_prefix!r})."
+            f"(default from .env.yaml bioc_download: {default_prefix!r})."
         ),
     )
     parser.add_argument(

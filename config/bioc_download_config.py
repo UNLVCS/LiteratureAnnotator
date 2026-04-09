@@ -8,7 +8,7 @@ Required env vars (no defaults):
     MINIO_URL, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 
 Optional env vars (sensible defaults provided):
-    MINIO_SECURE, BIOC_DOWNLOAD_BUCKET,
+    MINIO_SECURE,
     MESH_IDS, MESH_TERMS, MESH_QUERY, MAJOR_TOPIC_ONLY,
     NCBI_API_KEY, NCBI_EMAIL,
     BIOC_MAX_RESULTS, BIOC_BATCH_SIZE, BIOC_REQUEST_DELAY
@@ -55,11 +55,6 @@ class BioCDownloadConfig(BaseSettings):
     minio_access_key: str = Field(..., validation_alias="MINIO_ACCESS_KEY")
     minio_secret_key: str = Field(..., validation_alias="MINIO_SECRET_KEY")
     minio_secure: bool = Field(default=False, validation_alias="MINIO_SECURE")
-
-    download_bucket: str = Field(
-        default="raw-pubmed-articles",
-        validation_alias="BIOC_DOWNLOAD_BUCKET",
-    )
 
     # ------------------------------------------------------------------
     # NCBI / E-utilities

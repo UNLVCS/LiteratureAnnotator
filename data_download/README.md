@@ -213,7 +213,8 @@ work out of the box; set `mesh_terms` or `mesh_query` for your topic:
 
 ```yaml
 bioc_download:
-  download_bucket: "raw-pubmed-articles"   # sole source of the bucket name — minio.raw_articles_bucket is not used here
+  # Bucket comes from minio.raw_articles_bucket — no separate download_bucket field.
+  object_prefix: "run_2026_04"  # optional — organises objects into a sub-folder
   ncbi_api_key: ""          # optional — raises NCBI rate limit to 10 req/s
   ncbi_email: ""            # optional — recommended by NCBI usage policy
   mesh_query: ""            # raw PubMed query string (highest priority)

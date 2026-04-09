@@ -261,9 +261,10 @@ def download_articles(bd: BiocDownloadSettings, minio: MinioConfig) -> list[str]
         log.warning("No PMIDs returned for the given MeSH query.")
         return []
 
-    log.info("Target bucket (bioc_download.download_bucket): %s", bd.download_bucket)
+    bucket = minio.raw_articles_bucket
+    log.info("Target bucket (minio.raw_articles_bucket): %s", bucket)
     minio_client = _get_minio_client(minio)
-    _ensure_bucket(minio_client, bd.download_bucket)
+    _ensure_bucket(minio_client, bucket)
 
     uploaded: list[str] = []
     for i, pmid in enumerate(pmids, 1):
@@ -277,7 +278,7 @@ def download_articles(bd: BiocDownloadSettings, minio: MinioConfig) -> list[str]
         if article is None:
             continue
         try:
-            upload_article(minio_client, bd.download_bucket, pmid, article, prefix=bd.object_prefix)
+            upload_article(minio_client, bucket, pmid, article, prefix=bd.object_prefix)
             uploaded.append(pmid)
         except Exception as exc:
             log.error("Upload failed for PMID %s: %s", pmid, exc)
@@ -286,7 +287,7 @@ def download_articles(bd: BiocDownloadSettings, minio: MinioConfig) -> list[str]
         "Done — %d / %d articles uploaded to %s",
         len(uploaded),
         len(pmids),
-        bd.download_bucket,
+        bucket,
     )
     return uploaded
 

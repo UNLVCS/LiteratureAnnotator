@@ -97,7 +97,6 @@ class SeedConfig(BaseModel):
 class BiocDownloadSettings(BaseModel):
     """BioC downloader settings from the bioc_download: block of .env.yaml."""
 
-    download_bucket: str = "raw-pubmed-articles"
     ncbi_api_key: Optional[str] = None
     ncbi_email: Optional[str] = None
     mesh_query: Optional[str] = None

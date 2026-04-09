@@ -43,9 +43,15 @@ for m in matches:
 
 ### Ingestion — populate the vector DB from MinIO
 
+`Ingester` reads `bioc_download.object_prefix` from `.env.yaml` and uses it as
+both the MinIO object prefix filter **and** the Pinecone namespace.  This means
+each download batch is automatically isolated into its own namespace.
+
 ```python
 from data_vectorize import Ingester
 
+# Uses bioc_download.object_prefix as the MinIO prefix and Pinecone namespace.
+# Falls back to pinecone.namespace when object_prefix is empty.
 Ingester().run()
 ```
 
@@ -54,6 +60,33 @@ Or as a CLI script from the workspace root:
 ```bash
 uv run python data_vectorize/data_label.py
 ```
+
+**Override the prefix** (and therefore the namespace):
+
+```python
+Ingester(prefix="run_2026_04").run()
+```
+
+**Override only the namespace**, keeping the prefix-based MinIO filter:
+
+```python
+Ingester(namespace="my-custom-ns").run()
+```
+
+**Process the whole bucket** (ignore prefix):
+
+```python
+Ingester(prefix="").run()
+# namespace falls back to pinecone.namespace from .env.yaml
+```
+
+#### Namespace resolution order
+
+| Condition | Pinecone namespace used |
+|---|---|
+| `namespace=` passed explicitly | that value |
+| `bioc_download.object_prefix` is set (or `prefix=` passed) | the prefix value |
+| prefix is empty | `pinecone.namespace` from `.env.yaml` |
 
 ### Single-article ingest
 
@@ -79,7 +112,7 @@ All credentials are read from `.env.yaml` at the workspace root via
 pinecone:
   api_key: "..."
   index_name: "adbm"
-  namespace: "article_upload_test_2"
+  namespace: "fallback-ns"   # used only when bioc_download.object_prefix is empty
 
 embeddings:
   api_key: "..."           # OpenAI key
@@ -90,8 +123,11 @@ minio:
   url: "localhost:9000"
   access_key: "..."
   secret_key: "..."
-  raw_articles_bucket: "raw-pubmed-articles"
+  raw_articles_bucket: "raw-pubmed-articles"   # single source of truth for the raw-articles bucket
   secure: false
+
+bioc_download:
+  object_prefix: "test_040926"   # scopes ingester to this sub-folder and names the namespace
 ```
 
 Any value can be overridden per-environment with `override.env.yaml`.

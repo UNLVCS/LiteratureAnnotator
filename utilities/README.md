@@ -137,7 +137,7 @@ uv run python utilities/seed_queue_from_bucket.py --dry-run
 
 | Flag | Default | Description |
 |---|---|---|
-| `--bucket` | `bioc_download.download_bucket` from `.env.yaml` | MinIO bucket to read from |
+| `--bucket` | `minio.raw_articles_bucket` from `.env.yaml` | MinIO bucket to read from |
 | `--queue` | `labeler` | `labeler` or `human` |
 | `--prefix` | `bioc_download.object_prefix` from `.env.yaml` | Only consider objects whose name starts with this string |
 | `--dry-run` | off | Print what would happen; do not write to Redis |
