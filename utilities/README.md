@@ -1,8 +1,7 @@
-# Utilities — Queue, Vector DB, and Seeding Helpers
+# Utilities — Queue and Seeding Helpers
 
 Shared runtime utilities for the LiteratureAnnotator paper processing pipelines:
-Redis-backed queues, Pinecone vector DB access, queue status monitoring, and
-queue seeding scripts.
+Redis-backed queues, queue status monitoring, and queue seeding scripts.
 
 ## Setup
 
@@ -20,6 +19,9 @@ No need to activate the venv — prefix commands with `uv run` and it handles th
 ```bash
 # Seed the RAG labeling queue from a file of paper IDs
 uv run python -m utilities.seed_queue
+
+# Seed the RAG labeling queue from a MinIO bucket
+uv run python utilities/seed_queue_from_bucket.py --bucket raw-pubmed-articles
 
 # Seed the human labeling queue
 uv run python -m utilities.seed_human_queue
@@ -73,18 +75,6 @@ redis:
   human_dedup_set:        "s:papers:human:enqueued:v1"
 ```
 
-### Pinecone — required for `vector_db.py`
-
-```yaml
-pinecone:
-  api_key:    ""
-  index_name: "adbm"
-  namespace:  "article_upload_test_2"
-
-embeddings:
-  dimensions: 1536
-```
-
 ### Seed file paths — used by the seeding scripts
 
 ```yaml
@@ -111,6 +101,42 @@ Input file format (`utilities/test_papers.txt`):
 34567890
 ...
 ```
+
+### `seed_queue_from_bucket` — seed a queue from a MinIO bucket
+
+Reads paper IDs directly from the object names in a MinIO bucket and enqueues
+them into either the RAG labeler or human labeling queue. Designed to be run
+after a `data_download` job so newly downloaded articles are immediately
+available for labeling.
+
+Paper IDs are derived from the filename stem of each object
+(`raw-pubmed-articles/38291045.json` → `38291045`). Duplicates are silently
+skipped via the Redis dedup set, so running this script multiple times after
+incremental downloads is safe.
+
+```bash
+# Use bucket + prefix straight from .env.yaml bioc_download section (no flags needed):
+uv run python utilities/seed_queue_from_bucket.py
+
+# Override the bucket explicitly:
+uv run python utilities/seed_queue_from_bucket.py --bucket raw-pubmed-articles
+
+# Enqueue into the human-labeling queue:
+uv run python utilities/seed_queue_from_bucket.py --queue human
+
+# Override the object prefix:
+uv run python utilities/seed_queue_from_bucket.py --prefix 2024/
+
+# Dry-run — see what would be enqueued without touching Redis:
+uv run python utilities/seed_queue_from_bucket.py --dry-run
+```
+
+| Flag | Default | Description |
+|---|---|---|
+| `--bucket` | `bioc_download.download_bucket` from `.env.yaml` | MinIO bucket to read from |
+| `--queue` | `labeler` | `labeler` or `human` |
+| `--prefix` | `bioc_download.object_prefix` from `.env.yaml` | Only consider objects whose name starts with this string |
+| `--dry-run` | off | Print what would happen; do not write to Redis |
 
 ### `seed_human_queue` — seed the human labeling queue
 
@@ -200,18 +226,6 @@ enqueue_paper_id()
   paper_processing  (in-flight)
       ↓  ack_paper()        or  requeue_inflight()  (on failure)
   [removed]                      paper_queue  (retried)
-```
-
-### `vector_db.py` — `VectorDb`
-
-Pinecone wrapper used by upstream RAG scripts. Loads index config from
-`.env.yaml` automatically when no explicit args are passed:
-
-```python
-from utilities.vector_db import VectorDb
-
-db = VectorDb()                          # reads pinecone + embeddings from .env.yaml
-db = VectorDb(api_key="...", index_name="my-index", embedding_dimensions=1536)
 ```
 
 ### `criteria.py` — inclusion criteria prompts
