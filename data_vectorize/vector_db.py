@@ -40,7 +40,7 @@ class VectorDb:
             index_name = index_name or pinecone_config.index_name
 
         index_name = index_name or "adbm"
-        dimensions = embeddings_config.dimensions if embeddings_config else 1536
+        dimensions = embeddings_config.dimensions if embeddings_config and embeddings_config.model != "text-embedding-ada-002" else None 
 
         self._embeddings_config = embeddings_config
         self._openai = openai.OpenAI(api_key=embeddings_config.api_key)
@@ -66,12 +66,15 @@ class VectorDb:
 
     def _embed(self, text: str) -> list[float]:
         """Generate a single embedding vector for *text*."""
-        response = self._openai.embeddings.create(
-            model=self._embeddings_config.model,
-            input=text,
-            encoding_format="float",
-            dimensions=self._embeddings_config.dimensions,
-        )
+        kwargs: dict = {
+            "model": self._embeddings_config.model,
+            "input": text,
+            "encoding_format": "float",
+        }
+        # text-embedding-ada-002 does not accept a dimensions parameter
+        if self._embeddings_config.model != "text-embedding-ada-002":
+            kwargs["dimensions"] = self._embeddings_config.dimensions
+        response = self._openai.embeddings.create(**kwargs)
         return response.data[0].embedding
 
     # ------------------------------------------------------------------

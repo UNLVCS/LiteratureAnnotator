@@ -190,9 +190,11 @@ class Ingester:
             key = SECTION_MAP.get(raw_type) or raw_type.title() or "Body"
             sections.setdefault(key, []).append(text)
 
-        # Title should be a plain string for Chunker's .article_title field
+        # Title should be a plain string for Chunker's .article_title field.
+        # Fall back to the PMID if no title passage was present.
         flat: dict = {}
         for key, values in sections.items():
             flat[key] = values[0] if key == "Title" else values
+        flat.setdefault("Title", pmid)
 
         return {pmid: flat}
