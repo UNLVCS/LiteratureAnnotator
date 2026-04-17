@@ -69,6 +69,12 @@ def initialize_shared_resources():
     global _embedder, _vector_store, _vdb, _criteria_queries
     
     if _embedder is None:
+        # Resolve namespace using the same logic as Ingester:
+        # bioc_download.object_prefix takes precedence over pinecone.namespace
+        # so that ingestion and retrieval always target the same partition.
+        _prefix = _app_config.bioc_download.object_prefix or ""
+        _namespace = _prefix or _app_config.pinecone.namespace
+
         _vdb = VectorDb(pinecone_config=_app_config.pinecone)
         _embedder = OpenAIEmbeddings(
             model=_app_config.embeddings.model,
@@ -78,7 +84,7 @@ def initialize_shared_resources():
         _vector_store = PineconeVectorStore(
             index=_vdb.index,
             embedding=_embedder,
-            namespace=_app_config.pinecone.namespace,
+            namespace=_namespace,
         )
         _criteria_queries = CRITERIA_PROMPTS
 

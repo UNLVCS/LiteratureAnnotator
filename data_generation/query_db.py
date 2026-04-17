@@ -14,8 +14,13 @@ embeddings = OpenAIEmbeddings(
     dimensions=None if app_config.embeddings.model == "text-embedding-ada-002" else app_config.embeddings.dimensions,
 )
 
+# Resolve namespace using the same logic as Ingester:
+# bioc_download.object_prefix takes precedence over pinecone.namespace.
+_prefix = app_config.bioc_download.object_prefix or ""
+_namespace = _prefix or app_config.pinecone.namespace
+
 vector_store = PineconeVectorStore(
     index=db.index,
     embedding=embeddings,
-    namespace=app_config.pinecone.namespace,
+    namespace=_namespace,
 )

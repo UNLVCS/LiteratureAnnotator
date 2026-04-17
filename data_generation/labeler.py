@@ -42,6 +42,12 @@ class RAGLabelingGenerator:
         
         self.providers = config.get_providers_dict()
         
+        # Resolve namespace using the same logic as Ingester:
+        # bioc_download.object_prefix takes precedence over pinecone.namespace
+        # so that ingestion and retrieval always target the same partition.
+        _prefix = config.bioc_download.object_prefix or ""
+        self._namespace = _prefix or config.pinecone.namespace
+
         # Setup vector store and embeddings
         self.vdb = VectorDb(pinecone_config=config.pinecone)
         self.embedder = OpenAIEmbeddings(
@@ -52,7 +58,7 @@ class RAGLabelingGenerator:
         self.vector_store = PineconeVectorStore(
             index=self.vdb.index,
             embedding=self.embedder,
-            namespace=config.pinecone.namespace,
+            namespace=self._namespace,
         )
         
         self.criteria_queries = CRITERIA_PROMPTS
