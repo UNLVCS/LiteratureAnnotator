@@ -1,106 +1,105 @@
-import json
-from collections import defaultdict
+class Chunker:
+    """
+    Splits articles into child chunks (for retrieval) with parent context preserved.
 
-class Chunker():
-    
+    Each entry in `chunked_instances` is a dict:
+        {"text": str, "parent_text": str, "section": str}
+
+    "text"       : child chunk (~600 chars), embedded and used for retrieval
+    "parent_text": full section text, returned to the LLM for answer generation
+    "section"    : section name (e.g. "Results", "Methodology")
     """
-        File must be a valid json file following the given structure
-            {
-                PMID: {
-                    "Title": [],
-                    "Abstract": [],
-                    "Introduction": [],
-                    "Methodology": [],
-                    etc...
-                }
-            }
-        
-        overlap_size determines the overlap that will be created between chunks
-    """
-    
+
+    CHILD_MAX_CHARS = 600
+    OVERLAP_CHARS = 100
+
     def __init__(self):
-        # pass
-        self.article = []              #  Raw article as a list between sections
-        self.article_id = 123456            #  PMID of article
-        self.chunked_instances = []       #  Article as a chunked list
-
-        # self.article = list(article_dict.values())
-        # self.article_id = article_dict.keys[0]
-
-    def set_chunk(self, article_dict: dict, overlap_size: int = 50):
+        self.article_id = None
+        self.article_title = ""
         self.chunked_instances = []
-        self.article_id, self.article = next(iter(article_dict.items()))
-        self.article_title = self.article['Title']
-        self.article = list(self.article.values())
-        
-        self.split_document()
+        self._article_sections = {}
 
-    def get_chunked_article(self):
-        chunked_doc = {"id": self.article_id,
-                       "title": self.article_title,
-                       "chunks": self.chunked_instances
-                    }
-        return chunked_doc
-    
-    """
-        Will split article sections into valid chunks. If sections are greater than xxx length
-            each section will be chunked itself while maintaining some overlap
-    """
+    def set_chunk(self, article_dict: dict):
+        self.chunked_instances = []
+        self.article_id, article = next(iter(article_dict.items()))
+        self.article_title = article.get("Title", str(self.article_id))
+        self._article_sections = {k: v for k, v in article.items() if k != "Title"}
+        self._split_document()
 
-    def split_document(self):
+    def get_chunked_article(self) -> dict:
+        return {
+            "id": self.article_id,
+            "title": self.article_title,
+            "chunks": self.chunked_instances,
+        }
 
-        # to_chunk = ""
-        to_chunk = []
-        to_chnk_txt_size = 0
-        for section in self.article:                # If section > 150 words then chunk that section itself
-            # Some sections (e.g., Title, References) are plain strings while others are lists of strings.
-            # Joining a string with '\n'.join(section) will insert newlines between EACH CHARACTER,
-            if isinstance(section, list):
-                section = '\n'.join(section)
-            elif not isinstance(section, str):
-                section = str(section)
-            if to_chnk_txt_size > 150:
-                to_chunk.append(section)
-                # to_chunk += section
-                self.overlap_window_chunker(to_chunk)
-                to_chunk = []
-                to_chnk_txt_size = 0
+    def _split_document(self):
+        for section_name, content in self._article_sections.items():
+            if isinstance(content, list):
+                section_text = "\n".join(content)
+            elif not isinstance(content, str):
+                section_text = str(content)
             else:
-                # to_chunk += section
-                to_chnk_txt_size += len(section)
-                to_chunk.append(section)
-        
-        self.overlap_window_chunker(to_chunk)      # Catch and chunk remaining text that has not been chunked
+                section_text = content
 
-    def overlap_window_chunker(self, text, overlap_size=50):
+            section_text = section_text.strip()
+            if not section_text:
+                continue
 
-        for i in range(1, len(text)):
+            for child in self._recursive_split(section_text):
+                self.chunked_instances.append({
+                    "text": child,
+                    "parent_text": section_text,
+                    "section": section_name,
+                })
 
-            # Normalize possible list inputs to strings; if already string, use as-is
-            prev_item = text[i-1]
-            next_item = text[i]
-            if isinstance(prev_item, list):
-                text_first = "".join(prev_item)
+    def _recursive_split(self, text: str) -> list[str]:
+        """Split text into chunks <= CHILD_MAX_CHARS using progressively finer separators."""
+        if len(text) <= self.CHILD_MAX_CHARS:
+            return [text]
+
+        for sep in ["\n\n", "\n", ". ", " "]:
+            if sep not in text:
+                continue
+            result = self._split_by_sep(text, sep)
+            if result:
+                return result
+
+        return self._hard_split(text)
+
+    def _split_by_sep(self, text: str, sep: str) -> list[str]:
+        parts = text.split(sep)
+        chunks = []
+        current = ""
+
+        for part in parts:
+            candidate = (current + sep + part) if current else part
+            if len(candidate) <= self.CHILD_MAX_CHARS:
+                current = candidate
             else:
-                text_first = str(prev_item)
-            if isinstance(next_item, list):
-                text_later = "".join(next_item)
-            else:
-                text_later = str(next_item)
-            
-            chunk_first = ""
-            chunk_latter = ""
-            
-            if len(text_first) < overlap_size:
-                chunk_latter = text_first + ". " + text_later
-            else:
-                chunk_latter = text_first[overlap_size:] + ". " +  text_later
+                if not current:
+                    return []  # single part already exceeds limit; try next separator
+                chunks.append(current.strip())
+                # Carry the tail of the previous chunk into the next one,
+                # snapping forward to a sentence boundary so the overlap is a complete thought.
+                tail = current[-self.OVERLAP_CHARS:]
+                boundary = tail.find(". ")
+                overlap = tail[boundary + 2:] if boundary != -1 else tail
+                current = (overlap + sep + part) if overlap else part
 
+        if current:
+            chunks.append(current.strip())
 
-            if len(text_later) < overlap_size:
-                chunk_first = text_first + ". " +  text_later
-            else:
-                chunk_first = text_first + ". " +  text_later[:overlap_size]
+        return [c for c in chunks if c]
 
-            self.chunked_instances.append(chunk_first)
-            self.chunked_instances.append(chunk_latter)
+    def _hard_split(self, text: str) -> list[str]:
+        """Last-resort character split when no separator produces small-enough pieces."""
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = min(start + self.CHILD_MAX_CHARS, len(text))
+            chunks.append(text[start:end])
+            if end >= len(text):
+                break
+            start = end - self.OVERLAP_CHARS
+        return chunks

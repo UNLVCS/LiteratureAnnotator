@@ -1,5 +1,7 @@
 from typing import Optional, TYPE_CHECKING
 
+import numpy as np
+
 import openai
 from pinecone import Pinecone, ServerlessSpec, PineconeApiException
 
@@ -124,3 +126,60 @@ class VectorDb:
             include_metadata=include_metadata,
         )
         return result.matches
+
+    def query_mmr(
+        self,
+        namespace: str,
+        query_text: str,
+        top_k: int = 5,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+    ) -> list:
+        """
+        Return top_k chunks using Maximal Marginal Relevance to reduce redundancy.
+
+        Fetches fetch_k candidates by cosine similarity, then iteratively selects
+        results that balance relevance (sim to query) against redundancy (sim to
+        already-selected results).  lambda_mult=1.0 is pure similarity; 0.0 is
+        pure diversity; 0.5 is a balanced default.
+        """
+        embedding = self._embed(query_text)
+        candidates = self.index.query(
+            namespace=namespace,
+            vector=embedding,
+            top_k=fetch_k,
+            include_metadata=True,
+            include_values=True,
+        ).matches
+
+        if not candidates:
+            return []
+
+        # Unit-normalize so dot product == cosine similarity.
+        # Pinecone normalizes at upsert for cosine indexes, but we normalize
+        # defensively in case of floating-point drift.
+        vecs = np.array([c.values for c in candidates], dtype=np.float32)
+        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
+        vecs = vecs / np.where(norms == 0, 1.0, norms)
+
+        selected: list[int] = []
+        remaining = list(range(len(candidates)))
+
+        for _ in range(min(top_k, len(candidates))):
+            if not remaining:
+                break
+            if not selected:
+                best_idx = remaining[0]  # Pinecone already sorted by similarity
+            else:
+                sel_vecs = vecs[selected]
+                best_score, best_idx = -float("inf"), remaining[0]
+                for idx in remaining:
+                    relevance = candidates[idx].score
+                    redundancy = float(np.max(vecs[idx] @ sel_vecs.T))
+                    score = lambda_mult * relevance - (1 - lambda_mult) * redundancy
+                    if score > best_score:
+                        best_score, best_idx = score, idx
+            selected.append(best_idx)
+            remaining.remove(best_idx)
+
+        return [candidates[i] for i in selected]

@@ -102,9 +102,11 @@ class Ingester:
         for i, chunk in enumerate(chunked["chunks"]):
             vectors.append({
                 "id": f"{chunked['id']}-chunk{i}",
-                "values": self._vdb._embed(chunk),
+                "values": self._vdb._embed(chunk["text"]),
                 "metadata": {
-                    "text": chunk,
+                    "text": chunk["text"],
+                    "parent_text": chunk["parent_text"],
+                    "section": chunk["section"],
                     "doc": chunked["id"],
                     "title": chunked["title"],
                     "chunk": i,

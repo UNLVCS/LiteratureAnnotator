@@ -88,51 +88,52 @@ def initialize_shared_resources():
         )
         _criteria_queries = CRITERIA_PROMPTS
 
+def _swap_parent_content(docs):
+    """Replace each doc's page_content with its full parent section for richer LLM context."""
+    for doc in docs:
+        if doc.metadata.get("parent_text"):
+            doc.page_content = doc.metadata["parent_text"]
+    return docs
+
+
 def get_paper_chunks(paper_id: str) -> List[Dict[str, Any]]:
     """
-    Retrieve all chunks for a specific paper from the vector store
-    
-    Args:
-        paper_id: ID of the paper to retrieve chunks for
-        
+    Retrieve all chunks for a specific paper from the vector store.
+
     Returns:
         List of document chunks with metadata
     """
-    # Create a retriever with metadata filter for this specific paper
     filtered_retriever = _vector_store.as_retriever(
         search_kwargs={
             "filter": {"doc": paper_id},
-            "k": 20  # Get more chunks to ensure we have the full paper
+            "k": 20,
         }
     )
-    
-    # Retrieve documents
     docs = filtered_retriever.invoke("")
-    return docs
+    return _swap_parent_content(docs)
+
 
 def return_relevant_chunks(paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
     """
-    Retrieve the most relevant chunks for a specific criteria query using vector similarity search
-    
-    Args:
-        paper_id: ID of the paper to search within
-        criteria_query: The specific criteria query to search for
-        k: Number of most relevant chunks to retrieve
-        
+    Retrieve the most relevant chunks for a specific criteria query.
+
+    Uses MMR (Maximal Marginal Relevance) to avoid returning near-duplicate
+    chunks when multiple sections of a paper discuss the same topic.
+
     Returns:
-        List of most relevant document chunks for this criteria
+        List of most relevant, diverse document chunks for this criteria
     """
-    # Create a retriever with metadata filter for this specific paper
     filtered_retriever = _vector_store.as_retriever(
+        search_type="mmr",
         search_kwargs={
             "filter": {"doc": paper_id},
-            "k": k  # Get top k most relevant chunks for this specific query
-        }
+            "k": k,
+            "fetch_k": k * 4,
+            "lambda_mult": 0.5,
+        },
     )
-    
-    # Use invoke instead of deprecated get_relevant_documents
     docs = filtered_retriever.invoke(criteria_query)
-    return docs
+    return _swap_parent_content(docs)
 
 def create_inference_query(full_context: str, criteria_prompt: str) -> str:
     """
