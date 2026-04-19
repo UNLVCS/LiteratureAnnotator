@@ -24,7 +24,7 @@ def _load_classified_paper_data(paper_id: str, providers: list[str]) -> tuple[Op
     for provider in providers:
         try:
             object_name = f"{provider}/{paper_id}.json"
-            response = client.get_object(bucket_name=app_config.minio.bucket_name, object_name=object_name)
+            response = client.get_object(bucket_name=app_config.minio.synthetic_data_bucket, object_name=object_name)
             print(f"Paper data for {provider}")
             return json.loads(response.data.decode("utf-8")), provider
         except Exception as e:

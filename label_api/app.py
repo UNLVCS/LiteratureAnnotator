@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+
 from label_api.api.routes import router
 from label_api.services.startup import startup_services
 
