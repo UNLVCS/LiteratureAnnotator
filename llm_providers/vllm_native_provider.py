@@ -31,6 +31,7 @@ class VLLMNativeProvider(BaseLLMProvider):
         dtype: str = "auto",
         gpu_memory_utilization: float = 0.90,
         max_model_len: Optional[int] = None,
+        max_num_seqs: Optional[int] = None,
         trust_remote_code: bool = False,
         quantization: Optional[str] = None,
         **kwargs
@@ -44,6 +45,8 @@ class VLLMNativeProvider(BaseLLMProvider):
             dtype: Weight dtype — "auto", "float16", "bfloat16", "float32".
             gpu_memory_utilization: Fraction of GPU memory vLLM may use (0–1).
             max_model_len: Override the model's max context length (tokens).
+            max_num_seqs: Maximum number of sequences processed in a single
+                          iteration. Lowering this reduces sampler warmup memory.
             trust_remote_code: Allow executing custom model code from HF Hub.
             quantization: Quantization method, e.g. "awq", "gptq", "squeezellm".
             **kwargs: Forwarded to BaseLLMProvider for bookkeeping.
@@ -59,6 +62,8 @@ class VLLMNativeProvider(BaseLLMProvider):
         )
         if max_model_len is not None:
             llm_kwargs["max_model_len"] = max_model_len
+        if max_num_seqs is not None:
+            llm_kwargs["max_num_seqs"] = max_num_seqs
         if quantization is not None:
             llm_kwargs["quantization"] = quantization
 
