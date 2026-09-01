@@ -86,6 +86,30 @@ services:
         condition: service_healthy
 
   # ===========================================
+  # Vault - Secrets Store
+  # ===========================================
+  vault:
+    image: hashicorp/vault:1.17
+    container_name: annotation-vault
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    volumes:
+      - vault_data:/vault/data
+      - ./../vault/config/vault-config.hcl:/vault/config/vault-config.hcl:ro
+      - ./../vault/tls:/vault/tls:ro
+    command: vault server -config=/vault/config/vault-config.hcl
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-qO-", "https://127.0.0.1:8200/v1/sys/health?standbyok=true&sealedcode=200"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+    networks:
+      - annotation-network
+
+  # ===========================================
   # FastAPI Backend - Webhook Handler & Queue
   # ===========================================
   fastapi-backend:
@@ -104,9 +128,16 @@ services:
       --reload
       --reload-dir /app/label_api
       --reload-dir /app/utilities
+    environment:
+      - VAULT_ADDR=https://vault:8200
+      - VAULT_CACERT=/app/vault-ca.pem
+      - VAULT_ROLE_ID=${VAULT_ROLE_ID}
+      - VAULT_SECRET_ID_FILE=/app/.vault-secret-id
     volumes:
       - ../.env.yaml:/app/.env.yaml:ro
       - ../.env.docker-override.yaml:/app/override.env.yaml:ro
+      - ../vault/tls/vault-cert.pem:/app/vault-ca.pem:ro
+      - ../.vault-secret-id:/app/.vault-secret-id:ro
       # Persist annotations and data
       - annotation_data:/app/data_labeling
       # Mount source for development (optional - remove in production)
@@ -125,6 +156,9 @@ services:
         condition: service_healthy
       label-studio:
         condition: service_healthy
+      # vault intentionally not health-gated: it starts sealed after every
+      # restart and needs a manual unseal; the app falls back to YAML if
+      # Vault is unreachable at startup (see config/vault_client.py)
 
   # ===========================================
   # MinIO - Object Storage (Optional)
@@ -167,6 +201,8 @@ volumes:
   minio_data:
     driver: local
   pgadmin_data:
+    driver: local
+  vault_data:
     driver: local
 
 # ===========================================

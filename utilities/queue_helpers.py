@@ -20,6 +20,7 @@ import atexit
 import signal
 import threading
 from typing import Optional, TYPE_CHECKING
+from urllib.parse import urlsplit
 
 if TYPE_CHECKING:
     from config.app_config import AppConfig, RedisConfig
@@ -387,8 +388,12 @@ def _create_default_queue() -> PaperQueue:
     from config.app_config import load_app_config
 
     app_config = load_app_config()
-    print(f"Redis URL: {app_config.redis.url}")
-    
+
+    # Log the endpoint without the credential — this lands in container logs.
+    _parts = urlsplit(app_config.redis.url)
+    print(f"Redis URL: {_parts.scheme}://{_parts.hostname}:{_parts.port}{_parts.path}")
+
+
     queue = PaperQueue.from_app_config(app_config)
     queue.register_shutdown_hooks()
     return queue

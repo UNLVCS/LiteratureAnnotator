@@ -158,6 +158,23 @@ def _deep_merge(base: dict, override: dict) -> dict:
     return out
 
 
+def _inject_redis_password(url: str, password: str) -> str:
+    """Splice a password into an existing Redis URL.
+
+    Vault stores only the bare password; the host/port/db portion stays in YAML
+    because it differs per environment (the `redis` service DNS name inside
+    Docker vs. the vostok hostname for host-side scripts).
+    """
+    from urllib.parse import quote, urlsplit, urlunsplit
+
+    parts = urlsplit(url)
+    netloc = parts.hostname or ""
+    if parts.port:
+        netloc = f"{netloc}:{parts.port}"
+    userinfo = f"{parts.username or ''}:{quote(password, safe='')}"
+    return urlunsplit((parts.scheme, f"{userinfo}@{netloc}", parts.path, parts.query, parts.fragment))
+
+
 def load_app_config(config_path: Optional[Path] = None, reload: bool = False) -> AppConfig:
     """
     Load application config from .env.yaml, merging override.env.yaml if present.
@@ -194,7 +211,20 @@ def load_app_config(config_path: Optional[Path] = None, reload: bool = False) ->
         with open(override_path, "r", encoding="utf-8") as f:
             override = yaml.safe_load(f) or {}
         data = _deep_merge(data, override)
-    
+
+    from config.vault_client import fetch_secret_overlay
+
+    overlay = fetch_secret_overlay()
+    if overlay:
+        redis_password = overlay.get("redis", {}).pop("password", None)
+        if not overlay.get("redis"):
+            overlay.pop("redis", None)
+        data = _deep_merge(data, overlay)
+        if redis_password:
+            redis_section = data.setdefault("redis", {})
+            base_url = redis_section.get("url") or RedisConfig.model_fields["url"].default
+            redis_section["url"] = _inject_redis_password(base_url, redis_password)
+
     _app_config = AppConfig.model_validate(data)
     return _app_config
 

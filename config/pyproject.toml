@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Shared YAML-based application configuration for LiteratureAnnotator."
 requires-python = ">=3.10"
 dependencies = [
+  "hvac>=2.1.0",
   "pydantic>=2.0.0",
   "pyyaml>=6.0",
   "typing-extensions>=4.0.0",

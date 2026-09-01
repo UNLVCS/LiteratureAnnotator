@@ -8,6 +8,12 @@ ignore_me
 .env
 .env.yaml
 .env.docker-override.yaml
+.env.postgres
+vault/tls/
+.vault-secret-id
+.rotate-secret-id
+.rotate-role-id
+ops/vault/*.log
 llm_providers/examples/yaml_run/env.yaml
 llm_params*.json
 llm_config.yaml
