@@ -14,6 +14,7 @@ vault/tls/
 .vault-secret-id
 .rotate-secret-id
 .rotate-role-id
+.postgres-lease-id
 ops/vault/*.log
 llm_providers/examples/yaml_run/env.yaml
 llm_params*.json

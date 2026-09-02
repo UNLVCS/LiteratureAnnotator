@@ -94,7 +94,7 @@ services:
   # Vault - Secrets Store
   # ===========================================
   vault:
-    image: hashicorp/vault:1.17
+    image: hashicorp/vault:1.21.4
     container_name: annotation-vault
     restart: unless-stopped
     cap_add:
