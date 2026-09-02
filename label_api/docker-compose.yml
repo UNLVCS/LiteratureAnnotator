@@ -9,8 +9,11 @@ services:
     container_name: annotation-postgres
     restart: unless-stopped
     environment:
+      # Only consulted when initializing an empty data directory. On an
+      # existing volume the live password is whatever Vault last set — see
+      # ops/vault/bootstrap_postgres_engine.sh.
       - POSTGRES_USER=labelstudio
-      - POSTGRES_PASSWORD=labelstudio
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-labelstudio}
       - POSTGRES_DB=labelstudio
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -59,8 +62,10 @@ services:
       - POSTGRE_HOST=postgres
       - POSTGRE_PORT=5432
       - POSTGRE_NAME=labelstudio
-      - POSTGRE_USER=labelstudio
-      - POSTGRE_PASSWORD=labelstudio
+      # Short-lived credentials issued by Vault's database engine and written
+      # into label_api/.env by ops/vault/refresh_postgres_creds.sh.
+      - POSTGRE_USER=${POSTGRE_USER:-labelstudio}
+      - POSTGRE_PASSWORD=${POSTGRE_PASSWORD:-labelstudio}
       # File serving
       - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
       - LABEL_STUDIO_LOCAL_FILES_DOCUMENT_ROOT=/label-studio/files

@@ -9,6 +9,7 @@ ignore_me
 .env.yaml
 .env.docker-override.yaml
 .env.postgres
+override.env.yaml
 vault/tls/
 .vault-secret-id
 .rotate-secret-id

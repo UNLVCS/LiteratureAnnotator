@@ -116,4 +116,4 @@ pool and can't re-fetch mid-lease, so `refresh_postgres_creds.sh` runs hourly
 | Redis | — | No |
 | Label Studio | — | No |
 | Postgres | — | No (Vault connects *to* it as an admin) |
-| the other cross-network app | not yet decided | tbd |
+| the other cross-network app | needs its own read-only AppRole, scoped to the `redis` path | Yes — Vault's port is reachable off-host for exactly this |
