@@ -73,12 +73,33 @@ buckets (host scripts, SLURM jobs).
 
 Postgres is the one backend with true dynamic secrets. Vault holds the
 superuser credential (`secret/literature-annotator/postgres-admin`) and mints
-short-lived roles (24h TTL, 72h max) that inherit from `labelstudio_app`,
+short-lived roles (4h TTL, 24h max) that inherit from `labelstudio_app`,
 which owns all the application tables.
 
 Label Studio is an unmodified image that cannot re-fetch mid-lease, so
-`refresh_postgres_creds.sh` runs hourly and recreates the container. Vault
-drops the previous role when its lease expires.
+`refresh_postgres_creds.sh` runs hourly and recreates the container. It revokes
+the previous lease once the new credentials are confirmed working.
+
+### The TTL constraint — do not break this
+
+A dynamic secret read with a token becomes a **child lease of that token**.
+When the token expires, Vault cascades revocation to its children. So:
+
+> the rotation AppRole's `token_ttl` (6h) must stay **greater than** the
+> database role's `default_ttl` (4h)
+
+If that inverts, Label Studio's database role gets dropped out from under it
+partway through the credential's advertised lifetime, and the symptom is a
+Postgres `password authentication failed` in the Label Studio logs with no
+obvious cause. Check both values with:
+
+```bash
+vault read -field=token_ttl auth/approle/role/literature-annotator-rotate
+vault read -field=default_ttl database/roles/label-studio-role
+```
+
+The 4h/1h-refresh gap is deliberate slack: three consecutive failed refreshes
+can pass before Label Studio actually loses access.
 
 Rotating the superuser password itself is rare and manual:
 

@@ -102,9 +102,14 @@ sequenceDiagram
     Note over LS: Label Studio is not involved in this step.
 ```
 
-`default_ttl=24h` / `max_ttl=72h` — Label Studio holds a persistent connection
+`default_ttl=4h` / `max_ttl=24h` — Label Studio holds a persistent connection
 pool and can't re-fetch mid-lease, so `refresh_postgres_creds.sh` runs hourly
 (well inside the TTL window) rather than relying on the lease alone.
+
+The credential lease is a *child* of the AppRole token used to request it, so
+it dies when that token does. The rotation role's `token_ttl` (6h) is therefore
+kept above this `default_ttl` (4h) — see the TTL constraint in
+[../README.md](../README.md).
 
 ## Who actually talks to Vault
 

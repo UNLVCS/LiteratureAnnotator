@@ -100,11 +100,15 @@ vault_cmd write database/config/postgres \
   password="$NEW_ADMIN_PASSWORD" >/dev/null
 
 echo "==> Creating the dynamic role"
+# default_ttl must stay BELOW the rotation AppRole's token_ttl (6h, set in
+# bootstrap.sh): credentials issued with that token are child leases and die
+# with it. 4h against an hourly refresh still tolerates three consecutive
+# failed refreshes before Label Studio loses its database access.
 vault_cmd write database/roles/label-studio-role \
   db_name=postgres \
   creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}' IN ROLE labelstudio_app INHERIT;" \
-  default_ttl=24h \
-  max_ttl=72h >/dev/null
+  default_ttl=4h \
+  max_ttl=24h >/dev/null
 
 echo "==> Issuing the first set of credentials for Label Studio"
 "$REPO_ROOT/ops/vault/refresh_postgres_creds.sh"

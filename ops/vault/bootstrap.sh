@@ -45,9 +45,14 @@ vault_cmd write auth/approle/role/literature-annotator \
   token_policies="literature-annotator-read" \
   token_ttl=1h token_max_ttl=4h
 
+# token_ttl MUST exceed the Postgres credential TTL in
+# bootstrap_postgres_engine.sh. A dynamic secret read with this token becomes a
+# CHILD lease of it, and Vault cascades revocation when the parent expires — so
+# a short token here silently caps how long Label Studio's database credential
+# actually lives, no matter what TTL the database role advertises.
 vault_cmd write auth/approle/role/literature-annotator-rotate \
   token_policies="literature-annotator-rotate" \
-  token_ttl=15m token_max_ttl=1h
+  token_ttl=6h token_max_ttl=12h
 
 echo "==> Issuing credentials"
 APP_ROLE_ID="$(vault_cmd read -field=role_id auth/approle/role/literature-annotator/role-id)"
