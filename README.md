@@ -2,7 +2,8 @@
 
 LiteratureAnnotator is a pipeline for building labeled training data from biomedical
 literature. It downloads papers from PubMed, uses LLMs to evaluate them against a set of
-inclusion/exclusion criteria (RAG-style, grounded in retrieved chunks), routes the results
+inclusion/exclusion criteria over each paper's full text (with verbatim evidence quotes
+resolved back to the source), routes the results
 through human review in Label Studio, and produces a labeled dataset for downstream model
 training — with Snorkel-based weak supervision available for combining noisy label sources.
 
@@ -13,10 +14,7 @@ PubMed (BioC API)
       │
       ▼
  data_download  ──────────►  MinIO (raw articles)
-                                    │
-                                    ▼
-                              data_vectorize  ──────────►  Pinecone (chunked + embedded)
-                                    │
+                                    │  (full text via papers/)
                                     ▼
                     Redis queue ◄──────────► data_generation (LLM labeling via llm_providers)
                                     │
@@ -41,8 +39,8 @@ throughout the pipeline. Secrets (API keys, DB credentials) are managed by Vault
 | [`config`](config/README.md) | Shared, YAML-based Pydantic config system used by every other package. |
 | [`llm_providers`](llm_providers) | Unified abstraction over Anthropic, OpenAI, HuggingFace, Ollama, and vLLM. |
 | [`data_download`](data_download/README.md) | Downloads PubMed articles via the NCBI BioC API into MinIO. |
-| [`data_vectorize`](data_vectorize/README.md) | Chunks and embeds articles, and handles Pinecone retrieval/ingestion. |
-| [`data_generation`](data_generation/README.md) | RAG labeling pipeline: evaluates papers against criteria using LLMs. |
+| [`papers`](papers/README.md) | Loads raw BioC from MinIO, renders whole papers, resolves cited quotes to offsets. |
+| [`data_generation`](data_generation/README.md) | Whole-paper labeling: evaluates papers against criteria using LLMs, with cited evidence. |
 | [`label_api`](label_api/README.md) | FastAPI service bridging the pipeline to Label Studio for human review. |
 | [`utilities`](utilities/README.md) | Redis queue helpers, queue seeding, and status monitoring scripts. |
 | [`data_analysis`](data_analysis) | Sample generation and semantic entropy analysis over labeling results. |

@@ -47,18 +47,14 @@ elif which == "minio":
     m = cfg.get("minio", {})
     emit("access_key", m.get("access_key"))
     emit("secret_key", m.get("secret_key"))
-elif which == "pinecone":
-    emit("api_key", cfg.get("pinecone", {}).get("api_key"))
 elif which == "label-studio":
     emit("api_key", cfg.get("label_studio", {}).get("api_key"))
-elif which == "openai":
-    emit("api_key", cfg.get("embeddings", {}).get("api_key"))
 elif which == "ncbi":
     emit("api_key", cfg.get("bioc_download", {}).get("ncbi_api_key"))
 PY
 }
 
-for name in redis minio pinecone label-studio openai ncbi; do
+for name in redis minio label-studio ncbi; do
   mapfile -t pairs < <(extract "$name")
   if [ "${#pairs[@]}" -eq 0 ]; then
     echo "==> $name: no value found in YAML, skipping"

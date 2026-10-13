@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-RAG-based Data Labeling Script using LLM Providers (Global Functions)
+Whole-paper Data Labeling Script using LLM Providers (Global Functions)
 
-This script generates labeled data using RAG chains with multiple LLM providers.
-It processes papers from a queue and generates labeled and fetches 
-semantically relevant chunks from a vector store.
+Claims paper IDs from the Redis queue, loads each paper's full text from the raw
+BioC JSON in MinIO, and evaluates every criterion with every configured provider
+(one worker process per provider). See labeling.py for the per-paper logic.
 
 This version uses global functions and variables for multiprocessing compatibility.
 """
@@ -19,18 +19,14 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from minio import Minio
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-
-from response_standardizer import standardize_llm_response
 
 # Add the parent directory to the path so we can import llm_providers
 sys.path.append(str(Path(__file__).parent.parent))
 
 from config.app_config import load_app_config
 from config.llm_providers_config import instantiate_provider
-from llm_providers.base import BaseLLMProvider, Query
-from data_vectorize import VectorDb
+from llm_providers.base import BaseLLMProvider
+from papers import PaperNotFoundError, load_paper_from_config
 from utilities.queue_helpers import (
     claim_next_paper,
     ack_paper,
@@ -40,7 +36,7 @@ from utilities.queue_helpers import (
     completed_papers_count,
     export_completed_papers_to_file,
 )
-from utilities.criteria import CRITERIA_PROMPTS
+from labeling import SkipPaper, label_paper, result_object_name
 
 # Load config from .env.yaml
 _app_config = load_app_config()
@@ -51,111 +47,17 @@ client = Minio(
     secret_key=_app_config.minio.secret_key,
     secure=_app_config.minio.secure,
 )
-bucket_name = _app_config.minio.synthetic_data_bucket  # RAG-generated labeling output
+bucket_name = _app_config.minio.synthetic_data_bucket  # labeling output
 if not client.bucket_exists(bucket_name):
     print(f"Bucket {bucket_name} does not exist. Creating it...")
     client.make_bucket(bucket_name)
 else:
     print(f"Bucket {bucket_name} already exists.")
 
-# Global variables for shared resources
-_embedder = None
-_vector_store = None
-_vdb = None
-_criteria_queries = None
+def load_paper(paper_id: str):
+    """Load and parse the raw BioC article for one paper ID from MinIO."""
+    return load_paper_from_config(paper_id, _app_config, client=client)
 
-def initialize_shared_resources():
-    """Initialize shared resources globally"""
-    global _embedder, _vector_store, _vdb, _criteria_queries
-    
-    if _embedder is None:
-        # Resolve namespace using the same logic as Ingester:
-        # bioc_download.object_prefix takes precedence over pinecone.namespace
-        # so that ingestion and retrieval always target the same partition.
-        _prefix = _app_config.bioc_download.object_prefix or ""
-        _namespace = _prefix or _app_config.pinecone.namespace
-
-        _vdb = VectorDb(pinecone_config=_app_config.pinecone)
-        _embedder = OpenAIEmbeddings(
-            model=_app_config.embeddings.model,
-            api_key=_app_config.embeddings.api_key,
-            dimensions=None if _app_config.embeddings.model == "text-embedding-ada-002" else _app_config.embeddings.dimensions,
-        )
-        _vector_store = PineconeVectorStore(
-            index=_vdb.index,
-            embedding=_embedder,
-            namespace=_namespace,
-        )
-        _criteria_queries = CRITERIA_PROMPTS
-
-def _swap_parent_content(docs):
-    """Replace each doc's page_content with its full parent section for richer LLM context."""
-    for doc in docs:
-        if doc.metadata.get("parent_text"):
-            doc.page_content = doc.metadata["parent_text"]
-    return docs
-
-
-def get_paper_chunks(paper_id: str) -> List[Dict[str, Any]]:
-    """
-    Retrieve all chunks for a specific paper from the vector store.
-
-    Returns:
-        List of document chunks with metadata
-    """
-    filtered_retriever = _vector_store.as_retriever(
-        search_kwargs={
-            "filter": {"doc": paper_id},
-            "k": 20,
-        }
-    )
-    docs = filtered_retriever.invoke("")
-    return _swap_parent_content(docs)
-
-
-def return_relevant_chunks(paper_id: str, criteria_query: str, k: int = 5) -> List[Dict[str, Any]]:
-    """
-    Retrieve the most relevant chunks for a specific criteria query.
-
-    Uses MMR (Maximal Marginal Relevance) to avoid returning near-duplicate
-    chunks when multiple sections of a paper discuss the same topic.
-
-    Returns:
-        List of most relevant, diverse document chunks for this criteria
-    """
-    filtered_retriever = _vector_store.as_retriever(
-        search_type="mmr",
-        search_kwargs={
-            "filter": {"doc": paper_id},
-            "k": k,
-            "fetch_k": k * 4,
-            "lambda_mult": 0.5,
-        },
-    )
-    docs = filtered_retriever.invoke(criteria_query)
-    return _swap_parent_content(docs)
-
-def create_inference_query(full_context: str, criteria_prompt: str) -> str:
-    """
-    Create an inference query by combining paper chunks with the criteria prompt
-    
-    Args:
-        paper_chunks: List of document chunks from the paper
-        criteria_prompt: The criteria prompt to evaluate
-        
-    Returns:
-        Combined query string for the LLM
-    """
-    # Create the RAG query with context instruction like in main.py
-    inference_query = f"""
-        Context from the research paper:
-        {full_context}
-
-        Task: {criteria_prompt}
-
-        Consider ALL provided chunks of the paper when answering. Synthesize information from all relevant sections.
-        """
-    return inference_query
 
 def process_paper_with_provider(
     paper_id: str,
@@ -163,117 +65,20 @@ def process_paper_with_provider(
     providers: Dict[str, BaseLLMProvider],
 ) -> Dict[str, Any]:
     """
-    Process a single paper with a specific provider
-    
-    Args:
-        paper_id: ID of the paper to process
-        provider_name: Name of the provider to use
-        
-    Returns:
-        Dictionary containing the results for this paper
+    Label a single paper with a specific provider over its full text.
+
+    Raises:
+        PaperNotFoundError / SkipPaper: the paper cannot be labeled; callers ack it.
     """
     if provider_name not in providers:
         raise ValueError(f"Provider {provider_name} not available")
-    
-    provider = providers[provider_name]
-    results = {
-        "paper_id": paper_id,
-        "provider": provider_name,
-        "title": None,  # Will be populated from chunk metadata
-        "criteria_results": [],
-        "final_classification": None,
-        "chunks_processed": 0,
-        "errors": []
-    }
-    
-    # Phase 1: retrieve chunks for every criterion (sequential vector searches).
-    criterion_data = []
-    for i, criteria_prompt in enumerate(_criteria_queries):
-        try:
-            relevant_chunks = return_relevant_chunks(paper_id, criteria_prompt, k=5)
-            if relevant_chunks and results["title"] is None:
-                if hasattr(relevant_chunks[0], "metadata") and "title" in relevant_chunks[0].metadata:
-                    results["title"] = relevant_chunks[0].metadata["title"]
-            full_context = "\n".join(
-                f"=== Chunk {j+1} ===\n{chunk.page_content}\n"
-                for j, chunk in enumerate(relevant_chunks)
-            )
-            criterion_data.append({
-                "idx": i,
-                "criteria_prompt": criteria_prompt,
-                "relevant_chunks": relevant_chunks,
-                "full_context": full_context,
-                "error": None,
-            })
-        except Exception as e:
-            results["errors"].append(f"Criterion {i+1} chunk retrieval failed: {str(e)}")
-            criterion_data.append({
-                "idx": i,
-                "criteria_prompt": criteria_prompt,
-                "relevant_chunks": [],
-                "full_context": "",
-                "error": str(e),
-            })
-
-    # Phase 2: batch all LLM calls for criteria that have chunks.
-    valid = [cd for cd in criterion_data if not cd["error"] and cd["relevant_chunks"]]
-    invalid = [cd for cd in criterion_data if cd["error"] or not cd["relevant_chunks"]]
-    for cd in invalid:
-        if not cd["error"]:
-            results["errors"].append(f"No relevant chunks found for criterion {cd['idx']+1}")
-
-    criterion_results: Dict[int, Dict] = {}
-    if valid:
-        queries = [
-            Query(
-                prompt=create_inference_query(cd["full_context"], cd["criteria_prompt"]),
-                system_message="You are an expert research analyst. Analyze the provided paper content and respond with valid JSON only.",
-                temperature=0.1,
-                max_tokens=500,
-            )
-            for cd in valid
-        ]
-        try:
-            responses = provider.call_api_batch(queries)
-            for cd, response in zip(valid, responses):
-                parsed_json, cleaned_content, success = standardize_llm_response(response.content)
-                criterion_results[cd["idx"]] = {
-                    "criterion": f"criterion_{cd['idx']+1}",
-                    "prompt": cd["criteria_prompt"],
-                    "response": parsed_json if (success and parsed_json) else None,
-                    "raw_response": response.content,
-                    "cleaned_response": cleaned_content,
-                    "error": None if (success and parsed_json) else "Failed to parse JSON",
-                    "chunks_used": len(cd["relevant_chunks"]),
-                    "full_context": cd["full_context"],
-                }
-        except Exception as e:
-            for cd in valid:
-                results["errors"].append(f"Criterion {cd['idx']+1} LLM call failed: {str(e)}")
-                criterion_results[cd["idx"]] = {
-                    "criterion": f"criterion_{cd['idx']+1}",
-                    "prompt": cd["criteria_prompt"],
-                    "response": None,
-                    "error": str(e),
-                    "chunks_used": 0,
-                    "full_context": cd["full_context"],
-                }
-
-    for cd in invalid:
-        criterion_results[cd["idx"]] = {
-            "criterion": f"criterion_{cd['idx']+1}",
-            "prompt": cd["criteria_prompt"],
-            "response": None,
-            "error": cd["error"] or "No relevant chunks found",
-            "chunks_used": 0,
-            "full_context": "",
-        }
-
-    # Phase 3: collect in strict criterion order.
-    results["criteria_results"] = [
-        criterion_results[i] for i in range(len(_criteria_queries)) if i in criterion_results
-    ]
-    return results
+    paper = load_paper(paper_id)
+    return label_paper(
+        paper,
+        provider_name,
+        providers[provider_name],
+        max_chars=_app_config.papers.max_chars,
+    )
 
 def worker_process(
     provider_name: str,
@@ -302,8 +107,6 @@ def worker_process(
     """
     papers_processed = 0
     try:
-        initialize_shared_resources()
-
         try:
             provider = instantiate_provider(provider_type, provider_kwargs)
         except Exception as e:
@@ -336,6 +139,15 @@ def worker_process(
                 result = process_paper_with_provider(paper_id, provider_name, providers)
                 result_queue.put(result)
                 papers_processed += 1
+            except (PaperNotFoundError, SkipPaper) as e:
+                print(f"Worker {provider_name}: Skipping paper {paper_id}: {e}")
+                result_queue.put({
+                    "paper_id": paper_id,
+                    "provider": provider_name,
+                    "skipped": str(e),
+                    "errors": [],
+                    "criteria_results": [],
+                })
             except Exception as e:
                 print(f"Worker {provider_name}: Error processing paper {paper_id}: {e}")
                 # Always emit a result so the coordinator can track this paper's outcome
@@ -487,11 +299,15 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
     # requeued rather than silently skipped.
     papers_with_errors: set = set()
     papers_with_success: set = set()
+    papers_skipped: set = set()
     for result in all_results:
         paper_id = result.get("paper_id")
         if paper_id is None:
             continue
-        if result.get("errors"):
+        if result.get("skipped"):
+            # Not downloaded / no text: retrying cannot help, so it is acked below.
+            papers_skipped.add(paper_id)
+        elif result.get("errors"):
             papers_with_errors.add(paper_id)
         else:
             papers_with_success.add(paper_id)
@@ -500,14 +316,20 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
     truly_completed = papers_with_success - papers_with_errors
 
     # Papers that never appeared in results (worker died before emitting) also need requeue.
-    papers_missing = set(papers_to_process) - papers_with_success - papers_with_errors
+    papers_missing = set(papers_to_process) - papers_with_success - papers_with_errors - papers_skipped
 
-    papers_to_requeue = (papers_with_errors | papers_missing) - truly_completed
+    papers_to_requeue = (papers_with_errors | papers_missing) - truly_completed - papers_skipped
 
     print(f"Acknowledging {len(truly_completed)} successfully completed papers from Redis...")
     for paper_id in truly_completed:
         ack_paper(paper_id)
         push_completed_paper(paper_id)
+
+    if papers_skipped:
+        print(f"Acknowledging {len(papers_skipped)} papers that cannot be labeled (see 'Skipping' above):")
+        for paper_id in sorted(papers_skipped):
+            ack_paper(paper_id)
+            print(f"  Skipped: {paper_id}")
 
     print(f"Requeuing {len(papers_to_requeue)} papers that had provider failures...")
     for paper_id in papers_to_requeue:
@@ -516,6 +338,7 @@ def process_papers_multiprocessed(num_papers: int = 10, providers: List[str] = N
 
     print(f"Completed multiprocessed processing. Total results: {len(all_results)}")
     print(f"Unique papers truly completed: {len(truly_completed)}")
+    print(f"Unique papers skipped (not downloaded / empty): {len(papers_skipped)}")
     print(f"Unique papers requeued for retry: {len(papers_to_requeue)}")
     return all_results
 
@@ -530,13 +353,17 @@ def save_results(results: List[Dict[str, Any]], filename: str = None):
     if filename is None:
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"rag_labeling_results_{timestamp}.json"
+        filename = f"labeling_results_{timestamp}.json"
     
     saved_count = 0
     for result in results:
         # Skip results that are error messages from failed workers
         if 'error' in result and 'paper_id' not in result:
             print(f"Skipping worker error result: {result.get('error', 'Unknown error')}")
+            continue
+
+        # Skip papers that were never labeled (missing raw article / empty text)
+        if result.get('skipped'):
             continue
         
         # Skip results with processing errors
@@ -551,12 +378,7 @@ def save_results(results: List[Dict[str, Any]], filename: str = None):
             
         json_data = json.dumps(result).encode('utf-8')
         content_length = len(json_data)
-        prefix = _app_config.minio.output_prefix.strip("/")
-        object_name = (
-            f"{prefix}/{result['provider']}/{result['paper_id']}.json"
-            if prefix
-            else f"{result['provider']}/{result['paper_id']}.json"
-        )
+        object_name = result_object_name(result, _app_config.minio.output_prefix)
         client.put_object(
             bucket_name=bucket_name,
             object_name=object_name,
@@ -570,11 +392,8 @@ def save_results(results: List[Dict[str, Any]], filename: str = None):
 
 def main():
     """
-    Main function to run the RAG labeling script
+    Main function to run the whole-paper labeling script
     """
-    # Initialize shared resources (loads providers from .env.yaml)
-    initialize_shared_resources()
-    
     # Get current queue length to determine how many papers to process
     queue_size = paper_queue_len()
     print(f"Current queue size: {queue_size}")
@@ -594,14 +413,14 @@ def main():
         return
 
     # Process papers using multiprocessing
-    print("Starting RAG-based labeling generation with multiprocessing...")
+    print("Starting whole-paper labeling with multiprocessing...")
     results = process_papers_multiprocessed(
         num_papers=queue_size,
         providers=list(provider_specs.keys()),
     )
     
     # Save final results
-    save_results(results, "final_rag_labeling_results.json")
+    save_results(results, "final_labeling_results.json")
     
     # Export completed paper IDs to text file
     print(f"\n{'='*60}")
@@ -618,7 +437,7 @@ def main():
     
     print(f"\n{'='*60}")
     print(f"Completed processing {len(results)} paper-provider combinations")
-    print("Results saved to final_rag_labeling_results.json")
+    print(f"Results saved to MinIO bucket {bucket_name}")
     print(f"{'='*60}")
 
 if __name__ == "__main__":

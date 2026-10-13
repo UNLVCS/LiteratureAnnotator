@@ -47,7 +47,7 @@ def print_status(queue: PaperQueue, show_ids: bool = False) -> None:
     print("  LiteratureAnnotator — Queue Status")
     print("=" * 56)
 
-    print("\n── RAG Labeling Pipeline ──────────────────────────────")
+    print("\n── Model Labeling Pipeline ────────────────────────────")
     print(f"  Pending       {pending:>6}  {_bar(pending, max(total_rag, 1))}")
     print(f"  In-flight     {in_flight:>6}  {_bar(in_flight, max(total_rag, 1))}")
     print(f"  Dedup set     {dedup_size:>6}  (papers ever enqueued & not yet acked)")
@@ -72,8 +72,8 @@ def print_status(queue: PaperQueue, show_ids: bool = False) -> None:
         print("  (could not fetch server info)")
 
     if show_ids:
-        _print_ids(r, "RAG pending",    cfg.paper_queue,       "LRANGE")
-        _print_ids(r, "RAG in-flight",  cfg.paper_processing,  "LRANGE")
+        _print_ids(r, "Label pending",  cfg.paper_queue,       "LRANGE")
+        _print_ids(r, "Label in-flight", cfg.paper_processing, "LRANGE")
         _print_ids(r, "Human pending",  cfg.HUMAN_PAPER_QUEUE, "LRANGE")
         _print_ids(r, "Human in-flight",cfg.HUMAN_PROCESSING_Q,"LRANGE")
         _print_ids(r, "Generated set",  cfg.generated_set,     "SMEMBERS")
@@ -115,7 +115,7 @@ def fix_inflight(queue: PaperQueue) -> None:
 # ---------------------------------------------------------------------------
 
 _CLEAR_TARGETS = {
-    "labeler": "RAG labeler queue (pending, in-flight, dedup set)",
+    "labeler": "model labeling queue (pending, in-flight, dedup set)",
     "human":   "human labeling queue (pending, in-flight, dedup set)",
     "generated": "generated/completed set",
     "annotations": "annotations buffer",

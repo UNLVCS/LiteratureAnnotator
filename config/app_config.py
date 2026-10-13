@@ -46,19 +46,11 @@ class MinioConfig(BaseModel):
     secret_key: str = ""
     bucket_name: str = "v1-criteria-classified-articles"
     raw_articles_bucket: str = "raw-pubmed-articles"
-    synthetic_data_bucket: str = "rag-labeled-data"
+    synthetic_data_bucket: str = "synthetic-data"
     secure: bool = False
     human_annotations_bucket: str = "human-annotations"
     annotations_bucket: str = "completed-annotations"
     output_prefix: str = ""
-
-
-class PineconeConfig(BaseModel):
-    """Pinecone vector store configuration."""
-
-    api_key: str = ""
-    index_name: str = "adbm"
-    namespace: str = "article_upload_test_2"
 
 
 class LabelStudioConfig(BaseModel):
@@ -79,12 +71,18 @@ class LabelStudioConfig(BaseModel):
         return self.api_key
 
 
-class EmbeddingsConfig(BaseModel):
-    """OpenAI embeddings configuration."""
+class PapersConfig(BaseModel):
+    """Whole-paper loading for labeling and review (see papers/)."""
 
-    api_key: str = ""
-    model: str = "text-embedding-ada-002"
-    dimensions: int = 1536
+    # MinIO prefix under minio.raw_articles_bucket holding {pmid}.json.
+    # None means "same as bioc_download.object_prefix", so download and labeling agree.
+    raw_prefix: Optional[str] = None
+    # BioC section types dropped before the paper is shown to a model or a human.
+    exclude_section_types: list[str] = Field(
+        default_factory=lambda: ["REF", "AUTH_CONT", "COMP_INT", "ACK_FUND"]
+    )
+    # Optional hard cap on rendered paper length (characters); None sends the whole paper.
+    max_chars: Optional[int] = None
 
 
 class SeedConfig(BaseModel):
@@ -132,9 +130,8 @@ class AppConfig(LLMProvidersDictMixin, BaseModel):
 
     redis: RedisConfig = Field(default_factory=RedisConfig)
     minio: MinioConfig = Field(default_factory=MinioConfig)
-    pinecone: PineconeConfig = Field(default_factory=PineconeConfig)
     label_studio: LabelStudioConfig = Field(default_factory=LabelStudioConfig)
-    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
+    papers: PapersConfig = Field(default_factory=PapersConfig)
     seed: SeedConfig = Field(default_factory=SeedConfig)
     bioc_download: BiocDownloadSettings = Field(default_factory=BiocDownloadSettings)
     llm_providers: Dict[str, LLMProviderConfig] = Field(default_factory=dict)

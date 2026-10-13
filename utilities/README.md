@@ -17,10 +17,10 @@ No need to activate the venv — prefix commands with `uv run` and it handles th
 ## Quick Start
 
 ```bash
-# Seed the RAG labeling queue from a file of paper IDs
+# Seed the model labeling queue from a file of paper IDs
 uv run python -m utilities.seed_queue
 
-# Seed the RAG labeling queue from a MinIO bucket
+# Seed the model labeling queue from a MinIO bucket
 uv run python utilities/seed_queue_from_bucket.py --bucket raw-pubmed-articles
 
 # Seed the human labeling queue
@@ -83,16 +83,16 @@ redis:
 
 ```yaml
 seed:
-  queue_file:         "utilities/test_papers.txt"   # RAG queue input
+  queue_file:         "utilities/test_papers.txt"   # model labeling queue input
   human_papers_file:  "utilities/human_papers.txt"  # human queue input
 ```
 
 ## Scripts
 
-### `seed_queue` — seed the RAG labeling queue
+### `seed_queue` — seed the model labeling queue
 
 Reads paper IDs (one per line) from `seed.queue_file` in `.env.yaml` and
-enqueues each into the RAG labeling pipeline. Duplicates are silently skipped
+enqueues each into the model labeling pipeline. Duplicates are silently skipped
 via the Redis dedup set.
 
 ```bash
@@ -109,7 +109,7 @@ Input file format (`utilities/test_papers.txt`):
 ### `seed_queue_from_bucket` — seed a queue from a MinIO bucket
 
 Reads paper IDs directly from the object names in a MinIO bucket and enqueues
-them into either the RAG labeler or human labeling queue. Designed to be run
+them into either the model labeler or human labeling queue. Designed to be run
 after a `data_download` job so newly downloaded articles are immediately
 available for labeling.
 
@@ -153,14 +153,14 @@ uv run python -m utilities.seed_human_queue
 
 ### `queue_status` — queue status dashboard
 
-Prints live queue depths for both the RAG and human labeling pipelines,
+Prints live queue depths for both the model and human labeling pipelines,
 annotation buffer size, and Redis connection info.
 
 ```bash
 uv run python -m utilities.queue_status                      # summary
 uv run python -m utilities.queue_status --ids                # include paper IDs in each queue
 uv run python -m utilities.queue_status --fix                # move stuck in-flight papers → pending
-uv run python -m utilities.queue_status --clear labeler      # clear RAG queue (with prompt)
+uv run python -m utilities.queue_status --clear labeler      # clear labeling queue (with prompt)
 uv run python -m utilities.queue_status --clear all --yes    # clear everything, no prompt
 ```
 
@@ -190,7 +190,7 @@ Example output:
   LiteratureAnnotator — Queue Status
 ========================================================
 
-── RAG Labeling Pipeline ──────────────────────────────
+── Model Labeling Pipeline ────────────────────────────
   Pending          42  [████████░░░░░░░░░░░░]
   In-flight         3  [█░░░░░░░░░░░░░░░░░░░]
   Dedup set        45  (papers ever enqueued & not yet acked)
@@ -256,7 +256,7 @@ enqueue_paper_id()
 ### `criteria.py` — inclusion criteria prompts
 
 Shared LLM prompt strings for the six paper-inclusion criteria used by both the
-RAG labeling and human labeling pipelines. Import directly — no config needed:
+model labeling and human labeling pipelines. Import directly — no config needed:
 
 ```python
 from utilities.criteria import CRITERIA_PROMPTS, CRITERION_NAMES

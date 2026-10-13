@@ -1,17 +1,15 @@
 [project]
 name = "literature-annotator-data-generation"
 version = "0.1.0"
-description = "RAG-based data labeling and generation scripts."
+description = "Whole-paper LLM labeling scripts."
 requires-python = ">=3.10"
 dependencies = [
-  "literature-annotator-data-vectorize",
+  "literature-annotator-papers",
   "langchain>=0.1.0",
   "langchain-core>=0.1.0",
   "langchain-openai>=0.1.0",
-  "langchain-pinecone>=0.1.0",
   "minio>=7.2.0",
   "openai>=1.0.0",
-  "pinecone>=3.0.0",
   "pydantic>=2.0.0",
   "python-dotenv>=1.0.0",
   "redis>=5.0.0",
@@ -29,4 +27,4 @@ providers = [
 package = false
 
 [tool.uv.sources]
-literature-annotator-data-vectorize = { workspace = true }
+literature-annotator-papers = { workspace = true }

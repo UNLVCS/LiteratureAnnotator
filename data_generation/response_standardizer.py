@@ -137,52 +137,6 @@ def extract_criterion_result(parsed_json: Dict[str, Any], criterion_name: str) -
     return parsed_json.get(criterion_name)
 
 
-def create_standardized_result(
-    criterion: str,
-    prompt: str,
-    raw_response: str,
-    chunks_used: int,
-    provider: str = None
-) -> Dict[str, Any]:
-    """
-    Create a standardized result structure for a criterion evaluation.
-    
-    Args:
-        criterion: The criterion name (e.g., "criterion_1")
-        prompt: The prompt used for this criterion
-        raw_response: The raw response from the LLM
-        chunks_used: Number of chunks used
-        provider: The provider name (optional)
-        
-    Returns:
-        Standardized result dictionary
-    """
-    
-    # Standardize the response
-    parsed_json, cleaned_content, success = standardize_llm_response(raw_response)
-    
-    # Create the result structure
-    result = {
-        "criterion": criterion,
-        "prompt": prompt,
-        "raw_response": raw_response,
-        "chunks_used": chunks_used
-    }
-    
-    if provider:
-        result["provider"] = provider
-    
-    if success and parsed_json:
-        result["response"] = parsed_json
-        result["cleaned_response"] = cleaned_content
-    else:
-        result["response"] = None
-        result["error"] = "Failed to parse JSON"
-        result["cleaned_response"] = cleaned_content
-    
-    return result
-
-
 def test_standardizer():
     """
     Test the standardizer with various response formats.

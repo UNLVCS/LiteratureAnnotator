@@ -32,9 +32,7 @@ POSTGRES_ROLE = "label-studio-role"
 _SECRET_MAP = {
     "redis": ("redis", {"password": "password"}),
     "minio": ("minio", {"access_key": "access_key", "secret_key": "secret_key"}),
-    "pinecone": ("pinecone", {"api_key": "api_key"}),
     "label-studio": ("label_studio", {"api_key": "api_key"}),
-    "openai": ("embeddings", {"api_key": "api_key"}),
     "ncbi": ("bioc_download", {"api_key": "ncbi_api_key"}),
 }
 

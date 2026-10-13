@@ -1,7 +1,7 @@
 <!--
   Label Studio Labeling Configuration - Human Labeling Project
-  Users make classification decisions directly from chunks (no LLM pre-labeling).
-  Same two-column layout: criteria + retrieved chunks (left), evaluation (right).
+  Users make classification decisions from the full paper (no LLM pre-labeling).
+  Same two-column layout: criteria + full paper (left), evaluation (right).
   Choices: SATISFIED / NOT_SATISFIED per criterion.
 -->
 <View>
@@ -15,7 +15,7 @@
   <!-- Two-Column Layout: Criteria Display (Left) + Evaluation Section (Right) -->
   <View style="display: flex; gap: 20px; align-items: flex-start;">
 
-    <!-- LEFT COLUMN: Display all criteria using pre-formatted HTML (chunks + criteria prompt, no LLM output) -->
+    <!-- LEFT COLUMN: Display all criteria using pre-formatted HTML (criteria + full paper, no LLM output) -->
     <View style="flex: 1 1 60%; margin-bottom: 30px; padding: 20px; background: #ffffff; border-radius: 12px; border: 2px solid #e0e0e0; box-shadow: 0 2px 8px rgba(0,0,0,0.1); max-height: 85vh; overflow-y: auto;">
       <HyperText name="criteria_display" value="$criteria_html" />
     </View>

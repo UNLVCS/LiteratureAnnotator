@@ -7,7 +7,7 @@
 #
 # WARNING: wider blast radius than the Redis rotation. Anything reading these
 # buckets breaks until it picks up the new keys — host scripts
-# (data_vectorize/, utilities/seed_queue_from_bucket.py), the SLURM job, and
+# (data_generation/, utilities/seed_queue_from_bucket.py), the SLURM job, and
 # any cross-network consumer.
 set -euo pipefail
 

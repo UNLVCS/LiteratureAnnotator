@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Example usage of RAG labeling script with OLLAMA provider
+Example usage of the labeling script with OLLAMA provider
 """
 
 import os
@@ -52,15 +52,15 @@ def test_ollama_connection():
 
 def main():
     """Main function to test OLLAMA setup"""
-    print("OLLAMA RAG Labeling Setup Test")
+    print("OLLAMA Labeling Setup Test")
     print("=" * 40)
     
     if test_ollama_connection():
-        print("\n🎉 OLLAMA is ready for RAG labeling!")
-        print("\nTo use OLLAMA in the RAG labeling script:")
+        print("\n🎉 OLLAMA is ready for labeling!")
+        print("\nTo use OLLAMA in the labeling script:")
         print("1. Make sure OLLAMA server is running: ollama serve")
         print("2. Pull a model: ollama pull llama3.1")
-        print("3. Run the RAG labeling script - it will automatically detect OLLAMA")
+        print("3. Run the labeling script - it will automatically detect OLLAMA")
     else:
         print("\n❌ OLLAMA setup incomplete")
         print("Please ensure:")

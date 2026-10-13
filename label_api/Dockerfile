@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY label_api/ /app/label_api/
 COPY utilities/ /app/utilities/
 COPY config/ /app/config/
+COPY papers/ /app/papers/
 COPY .env.yaml.example /app/.env.yaml
 
 # Create data directories
@@ -48,4 +49,4 @@ CMD ["uvicorn", "label_api.app:app", \
     "--ws-ping-timeout", "20", \
     "--timeout-keep-alive", "65", \
     "--log-level", "info", \
-    "--reload","--reload-dir","/app/label_api","--reload-dir","/app/utilities","--reload-dir","/app/data_labeling"]
+    "--reload","--reload-dir","/app/label_api","--reload-dir","/app/utilities","--reload-dir","/app/papers","--reload-dir","/app/data_labeling"]

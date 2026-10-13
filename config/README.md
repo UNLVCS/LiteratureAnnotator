@@ -37,7 +37,7 @@ config = load_app_config()
 # Access nested settings
 print(config.redis.url)
 print(config.minio.access_key)
-print(config.pinecone.index_name)
+print(config.papers.exclude_section_types)
 
 # Get instantiated LLM provider objects
 providers = config.get_providers_dict()  # Dict[str, BaseLLMProvider]
@@ -55,9 +55,8 @@ The config is **cached** after the first call — subsequent `load_app_config()`
 class AppConfig(LLMProvidersDictMixin, BaseModel):
     redis:         RedisConfig
     minio:         MinioConfig
-    pinecone:      PineconeConfig
     label_studio:  LabelStudioConfig
-    embeddings:    EmbeddingsConfig
+    papers:        PapersConfig
     seed:          SeedConfig
     llm_providers: Dict[str, LLMProviderConfig]
 ```
@@ -77,7 +76,7 @@ Job queues, deduplication sets, and annotation buffering.
 | `paper_processing` | `q:papers:processing:v1` | In-flight papers (claim/ack pattern) |
 | `paper_dedup_set` | `s:papers:enqueued:v1` | SET used to prevent duplicate enqueues |
 | `completed_papers_queue` | `q:papers:completed:v1` | Bookkeeping list for finished paper IDs |
-| `generated_set` | `s:papers:generated:v1` | SET recorded after RAG batch generation |
+| `generated_set` | `s:papers:generated:v1` | SET recorded after a labeling batch |
 | `ann_queue` | `q:annotations:completed:v1` | Buffer for completed LS annotations |
 | `ann_flush_threshold` | `1000` | Drain to disk when queue exceeds this length |
 | `ann_persist_path` | `data_labeling/annotations.jsonl` | Append-only JSONL flush target |
@@ -98,23 +97,11 @@ S3-compatible object storage for raw articles, classification results, and expor
 | `url` | `localhost:9000` | Host:port (no scheme) |
 | `access_key` | `""` | S3 access key (`MINIO_ROOT_USER` or created user) |
 | `secret_key` | `""` | S3 secret key |
-| `bucket_name` | `v1-criteria-classified-articles` | RAG classification results bucket |
-| `raw_articles_bucket` | `raw-pubmed-articles` | Source articles — single source of truth used by downloader, ingester, and queue seeder |
+| `bucket_name` | `v1-criteria-classified-articles` | Legacy classification results bucket (unused by current scripts) |
+| `raw_articles_bucket` | `raw-pubmed-articles` | Source articles — single source of truth used by downloader, labeler (`papers`), and queue seeder |
 | `secure` | `false` | Enable HTTPS / TLS verification |
 | `human_annotations_bucket` | `human-annotations` | Completed human LS annotations |
-| `annotations_bucket` | `completed-annotations` | Completed RAG-annotation tasks |
-
----
-
-### `PineconeConfig`
-
-Pinecone vector index for RAG retrieval.
-
-| Field | Default | Description |
-|---|---|---|
-| `api_key` | `""` | Pinecone console API key |
-| `index_name` | `adbm` | Index name (must match dimension in Pinecone) |
-| `namespace` | `article_upload_test_2` | Namespace for retriever queries |
+| `annotations_bucket` | `completed-annotations` | Completed model-review annotations |
 
 ---
 
@@ -132,15 +119,15 @@ The class also exposes `label_studio_url` and `label_studio_api_key` as property
 
 ---
 
-### `EmbeddingsConfig`
+### `PapersConfig`
 
-OpenAI-compatible text embeddings used by RAG scripts and human-import chunk retrieval.
+Whole-paper loading for model labeling and human review (see [`papers`](../papers/README.md)).
 
 | Field | Default | Description |
 |---|---|---|
-| `api_key` | `""` | OpenAI API key (or compatible provider) |
-| `model` | `text-embedding-ada-002` | Embedding model ID |
-| `dimensions` | `1536` | Vector dimension — must match Pinecone index |
+| `raw_prefix` | `null` | MinIO prefix holding `{pmid}.json` in `minio.raw_articles_bucket`; `null` means use `bioc_download.object_prefix` |
+| `exclude_section_types` | `["REF", "AUTH_CONT", "COMP_INT", "ACK_FUND"]` | BioC section types dropped before a model or human sees the paper |
+| `max_chars` | `null` | Optional cap on rendered paper length; `null` sends the whole paper |
 
 ---
 
@@ -150,7 +137,7 @@ Default input files for the queue-seeding utilities.
 
 | Field | Default | Description |
 |---|---|---|
-| `queue_file` | `utilities/test_papers.txt` | One paper ID per line → main RAG queue |
+| `queue_file` | `utilities/test_papers.txt` | One paper ID per line → main labeling queue |
 | `human_papers_file` | `utilities/human_papers.txt` | One paper ID per line → human queue |
 
 ---

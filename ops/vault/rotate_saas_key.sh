@@ -5,24 +5,22 @@
 # rotation API, so you generate the new key in their dashboard first, then
 # run this to store it and restart the consumer.
 #
-# Usage: ./ops/vault/rotate_saas_key.sh <pinecone|label-studio|openai|ncbi>
+# Usage: ./ops/vault/rotate_saas_key.sh <label-studio|ncbi>
 set -euo pipefail
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 PROVIDER="${1:-}"
 case "$PROVIDER" in
-  pinecone|label-studio|openai|ncbi) ;;
+  label-studio|ncbi) ;;
   *)
-    echo "Usage: $0 <pinecone|label-studio|openai|ncbi>" >&2
+    echo "Usage: $0 <label-studio|ncbi>" >&2
     exit 1
     ;;
 esac
 
 case "$PROVIDER" in
-  pinecone)     WHERE="Pinecone console -> API Keys" ;;
   label-studio) WHERE="Label Studio -> Account & Settings -> Access Token" ;;
-  openai)       WHERE="platform.openai.com -> API keys" ;;
   ncbi)         WHERE="NCBI account -> API Key Management" ;;
 esac
 

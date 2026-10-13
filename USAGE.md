@@ -8,15 +8,16 @@ A uv workspace containing multiple sub-packages for downloading, labeling, and a
 LiteratureAnnotator/          ← workspace root (virtual, package = false)
 ├── config/                   ← installable: shared Pydantic config models
 ├── llm_providers/            ← installable: unified LLM provider abstraction
+├── papers/                   ← installable: whole-paper BioC loading + quote resolution
 ├── data_download/            ← scripts: PubMed BioC downloader
-├── data_generation/          ← scripts: RAG-based labeling pipeline
+├── data_generation/          ← scripts: whole-paper LLM labeling pipeline
 ├── data_analysis/            ← scripts: sample generation & entropy analysis
 ├── label_api/                ← scripts: FastAPI + Label Studio webhook server
-├── utilities/                ← scripts: queue and vector DB helpers
+├── utilities/                ← scripts: queue and seeding helpers
 └── weak_supervision/         ← scripts: Snorkel weak-supervision experiments
 ```
 
-**Installable members** (`config`, `llm_providers`) have a build backend and are imported by other code.  
+**Installable members** (`config`, `papers`, `llm_providers`) have a build backend and are imported by other code.  
 **Script members** (everything else) have `package = false` — their code is run directly, not imported as a package.
 
 ## Prerequisites
@@ -45,7 +46,7 @@ This installs the dependencies of every member into one `.venv`. Use this when y
 uv sync
 ```
 
-This installs just `config` and `llm_providers` (the two installable members the root depends on). Sufficient for tasks that only import from those two packages.
+This installs just `config`, `papers` and `llm_providers` (the installable members the root depends on). Sufficient for tasks that only import from those packages.
 
 ### Install deps for a single script package
 

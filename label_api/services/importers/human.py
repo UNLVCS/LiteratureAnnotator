@@ -1,66 +1,24 @@
 """
-Human Labeling Project: chunk retrieval and task import.
-Retrieves chunks from Pinecone and creates Label Studio tasks.
+Human Labeling Project: task import.
+Loads the full paper from MinIO and creates a Label Studio task in which the labeler
+decides every criterion directly, without seeing any model output.
 """
 
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING
 
-from langchain_openai import OpenAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
-
-from label_api.services.human_task_payload import (
-    build_context,
-    build_human_criteria_html,
-    resolve_title,
-)
-from utilities.criteria import CRITERIA_PROMPTS, CRITERION_NAMES
+from label_api.services.human_task_payload import build_human_criteria_html
+from papers import PaperNotFoundError, load_paper_from_config
+from utilities.criteria import CRITERIA_INSTRUCTIONS, CRITERION_NAMES
 
 if TYPE_CHECKING:
     from label_api.clients.label_studio.human import HumanLabellerSDK
 
-_vector_store = None
-_vdb = None
-_embedder = None
-
-
-def _get_vector_store() -> PineconeVectorStore:
-    global _vector_store, _vdb, _embedder
-    if _vector_store is None:
-        from config.app_config import load_app_config
-        from data_vectorize.vector_db import VectorDb
-
-        app_config = load_app_config()
-        _vdb = VectorDb(pinecone_config=app_config.pinecone)
-        _embedder = OpenAIEmbeddings(
-            model=app_config.embeddings.model,
-            api_key=app_config.embeddings.api_key,
-            dimensions=None
-            if app_config.embeddings.model == "text-embedding-ada-002"
-            else app_config.embeddings.dimensions,
-        )
-        _vector_store = PineconeVectorStore(
-            index=_vdb.__get_index__(),
-            embedding=_embedder,
-            namespace=app_config.pinecone.namespace,
-        )
-    return _vector_store
-
-
-def return_relevant_chunks(paper_id: str, criteria_query: str, k: int = 5) -> List[Any]:
-    vs = _get_vector_store()
-    filtered_retriever = vs.as_retriever(
-        search_kwargs={
-            "filter": {"doc": paper_id},
-            "k": k,
-        }
-    )
-    return filtered_retriever.invoke(criteria_query)
-
 
 def import_next_human_tasks(ls_human: "HumanLabellerSDK") -> None:
+    from label_api.services.context import app_config, client
     from utilities.queue_helpers import (
         ack_paper_human,
         claim_next_paper_human,
@@ -73,33 +31,27 @@ def import_next_human_tasks(ls_human: "HumanLabellerSDK") -> None:
         return
 
     try:
-        criteria_list = []
-        title = "Title N/A"
-
-        for criterion_name, criteria_prompt in zip(CRITERION_NAMES, CRITERIA_PROMPTS):
-            chunks = return_relevant_chunks(paper_id, criteria_prompt, k=5)
-            title = resolve_title(title, chunks)
-            full_context = build_context(chunks)
-
-            criteria_list.append(
-                {
-                    "criterion": criterion_name,
-                    "class_criteria": criteria_prompt,
-                    "full_context": full_context,
-                    "num_chunks": len(chunks),
-                }
-            )
-
-        if all(c["num_chunks"] == 0 for c in criteria_list):
-            print(f"[Human] No chunks found for paper {paper_id}, skipping")
+        try:
+            paper = load_paper_from_config(paper_id, app_config, client=client)
+        except PaperNotFoundError as e:
+            print(f"[Human] Raw article not found for paper {paper_id} ({e}), skipping")
             ack_paper_human(paper_id)
             return
 
-        criteria_html, criterion_names = build_human_criteria_html(criteria_list)
+        if not paper.passages:
+            print(f"[Human] Paper {paper_id} has no text after parsing, skipping")
+            ack_paper_human(paper_id)
+            return
+
+        criteria_list = [
+            {"criterion": name, "class_criteria": instructions}
+            for name, instructions in zip(CRITERION_NAMES, CRITERIA_INSTRUCTIONS)
+        ]
+        criteria_html, criterion_names = build_human_criteria_html(criteria_list, paper)
 
         task_data = {
             "paper_id": paper_id,
-            "title": title,
+            "title": paper.title,
             "criteria_html": criteria_html,
             "criteria_json": json.dumps(criteria_list),
             "criterion_names": json.dumps(criterion_names),

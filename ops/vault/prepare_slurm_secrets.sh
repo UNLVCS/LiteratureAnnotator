@@ -47,19 +47,16 @@ kv() {
 umask 077
 python3 - "$OUT_FILE" \
   "$(kv redis password)" "$(kv minio access_key)" "$(kv minio secret_key)" \
-  "$(kv pinecone api_key)" "$(kv label-studio api_key)" \
-  "$(kv openai api_key)" "$(kv ncbi api_key)" <<'PY'
+  "$(kv label-studio api_key)" "$(kv ncbi api_key)" <<'PY'
 import sys, yaml
 
-out, redis_pw, mk, sk, pine, ls, oai, ncbi = sys.argv[1:9]
+out, redis_pw, mk, sk, ls, ncbi = sys.argv[1:7]
 
 # Only secrets. Structural config (hosts, buckets, model names) stays in
 # .env.yaml; this file is merged on top of it.
 doc = {
     "minio": {"access_key": mk, "secret_key": sk},
-    "pinecone": {"api_key": pine},
     "label_studio": {"api_key": ls},
-    "embeddings": {"api_key": oai},
     "bioc_download": {"ncbi_api_key": ncbi},
 }
 if redis_pw:

@@ -2,8 +2,14 @@
 
 `label_api` runs the annotation bridge service for both labeling workflows:
 
-- **RAG Annotation Project**: humans validate model output (`CORRECT` / `INCORRECT` / `ABSTAIN`)
-- **Human Labeling Project**: humans label directly from retrieved chunks (`SATISFIED` / `NOT_SATISFIED` / `ABSTAIN`)
+- **RAG Annotation Project** (model review; title kept for continuity, it no longer uses RAG):
+  humans validate each model answer (`CORRECT` / `INCORRECT` / `ABSTAIN`) against the full
+  paper, with the model's cited quotes highlighted in place
+- **Human Labeling Project** (blind): humans label directly from the full paper, without seeing
+  any model output (`SATISFIED` / `NOT_SATISFIED` / `ABSTAIN`)
+
+Both read the paper from the raw BioC JSON in MinIO via [`papers`](../papers/README.md);
+References are omitted.
 
 It reads pending paper IDs from Redis, imports Label Studio tasks, receives webhook events for completed annotations, and persists results to MinIO.
 
@@ -25,7 +31,7 @@ uv run uvicorn label_api.app:app --host 0.0.0.0 --port 8000 --reload
 
 ```text
 Redis queues
-  ├─ q:papers:v1            (RAG verification)
+  ├─ q:papers:v1            (model-answer review)
   └─ q:papers:human:v1      (direct human labeling)
         │
         ▼
@@ -53,7 +59,7 @@ MinIO buckets
 
 ## Queue semantics
 
-Both RAG and human imports use the **claim/ack/requeue** pattern only:
+Both review and human imports use the **claim/ack/requeue** pattern only:
 
 - claim: `claim_next_paper()` / `claim_next_paper_human()`
 - success: `ack_paper(...)` / `ack_paper_human(...)`
@@ -76,16 +82,17 @@ redis:
   paper_queue: "q:papers:v1"
   human_paper_queue: "q:papers:human:v1"
 
-pinecone:
-  namespace: "article_upload_test_2"
-
 minio:
   url: "localhost:9000"
   access_key: "..."
   secret_key: "..."
-  annotations_bucket: "annotations"
+  synthetic_data_bucket: "synthetic-data"      # model answers to review
+  raw_articles_bucket: "raw-pubmed-articles"   # full paper text
+  annotations_bucket: "completed-annotations"
   human_annotations_bucket: "human-annotations"
-  bucket_name: "classified-articles"
+
+papers:
+  exclude_section_types: ["REF", "AUTH_CONT", "COMP_INT", "ACK_FUND"]
 ```
 
 ## Typical workflow

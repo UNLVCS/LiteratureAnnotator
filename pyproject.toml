@@ -3,12 +3,12 @@ name = "literature-annotator"
 version = "0.1.0"
 description = "Workspace root for LiteratureAnnotator sub-packages."
 requires-python = ">=3.10"
-# Virtual root — depends only on the two installable members (config, llm_providers).
+# Virtual root — depends only on the installable members (config, papers, llm_providers).
 # Script-only members (data_generation, utilities, etc.) have package = false and
 # cannot be listed here; use `uv sync --all-packages` to pull in all member deps.
 dependencies = [
     "literature-annotator-config",
-    "literature-annotator-data-vectorize",
+    "literature-annotator-papers",
     "llm-providers",
 ]
 
@@ -19,9 +19,9 @@ dependencies = [
 members = [
     "config",           # shared YAML config models (installable: import config)
     "llm_providers",    # LLM provider abstraction (installable: import llm_providers)
-    "data_vectorize",   # vector DB retrieval + MinIO ingestion (installable: import data_vectorize)
-    "utilities",        # queue helpers and vector DB utilities
-    "data_generation",  # RAG labeling scripts
+    "papers",           # whole-paper BioC loading + quote resolution (installable: import papers)
+    "utilities",        # queue helpers and seeding scripts
+    "data_generation",  # whole-paper LLM labeling scripts
     "data_analysis",    # sample generation and entropy analysis
     "data_download",    # PubMed BioC downloader
     "label_api",        # FastAPI + Label Studio webhook server
@@ -33,7 +33,7 @@ members = [
 # ---------------------------------------------------------------------------
 [dependency-groups]
 
-# For the SLURM RAG-labeling job.
+# For the SLURM labeling job.
 # Adds vLLM (not in any member's default deps) and PyYAML (used by config.app_config).
 # Usage: uv sync --group slurm
 slurm = [
@@ -46,5 +46,5 @@ package = false
 
 [tool.uv.sources]
 literature-annotator-config = { workspace = true }
-literature-annotator-data-vectorize = { workspace = true }
+literature-annotator-papers = { workspace = true }
 llm-providers = { workspace = true }

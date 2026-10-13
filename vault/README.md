@@ -48,7 +48,7 @@ cd label_api && docker compose up -d
 | `ops/vault/rotate_redis.sh` | Redis password | monthly |
 | `ops/vault/rotate_minio.sh` | MinIO root credentials | monthly |
 | `ops/vault/refresh_postgres_creds.sh` | Label Studio's Postgres credentials | hourly |
-| `ops/vault/rotate_saas_key.sh <provider>` | Pinecone / Label Studio / OpenAI / NCBI keys | manual |
+| `ops/vault/rotate_saas_key.sh <provider>` | Label Studio / NCBI keys | manual |
 
 The SaaS keys are semi-manual: none of those providers offer a self-service
 rotation API, so you generate the replacement in their dashboard, run the

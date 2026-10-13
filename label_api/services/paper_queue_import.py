@@ -5,6 +5,7 @@ from typing import Optional
 
 from config.app_config import AppConfig
 from label_api.services.context import app_config, client, ls_rag
+from papers import PaperNotFoundError, load_paper_from_config
 from label_api.services.rag_task_payload import build_criteria_list, build_rag_criteria_html
 from utilities.queue_helpers import ack_paper, claim_next_paper, requeue_inflight
 
@@ -53,7 +54,12 @@ def import_next_paper_tasks(_project_id: int) -> None:
 
         criteria_list = build_criteria_list(paper_data)
         if criteria_list:
-            criteria_html, criterion_names = build_rag_criteria_html(criteria_list)
+            try:
+                paper = load_paper_from_config(paper_id, app_config, client=client)
+            except PaperNotFoundError:
+                print(f"Raw article for {paper_id} not in MinIO; task will show model answers only")
+                paper = None
+            criteria_html, criterion_names = build_rag_criteria_html(criteria_list, paper)
             task_data = {
                 "paper_id": paper_id,
                 "provider": provider,

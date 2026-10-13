@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "literature-annotator-papers"
+version = "0.1.0"
+description = "Whole-paper loading, rendering and quote resolution from raw BioC in MinIO."
+requires-python = ">=3.10"
+dependencies = [
+  "minio>=7.2.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools]
+package-dir = {"" = ".."}
+packages = ["papers"]

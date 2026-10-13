@@ -11,7 +11,7 @@ class HumanLabellerSDK(BaseLabelStudioProject):
         super().__init__(
             config,
             project_title="Human Labeling Project",
-            project_description="Direct human classification from chunks for fine-tuning",
+            project_description="Direct human classification from the full paper (no model output shown)",
             config_filename="human_label_interface_config.xml",
             log_prefix="[Human]",
         )
