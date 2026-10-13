@@ -2,20 +2,12 @@
 
 import json
 import sys
-import types
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "data_generation")]
-
-# llm_providers/__init__ imports every backend (vLLM, langchain, torch). These tests
-# only need llm_providers.base, so register the package without running __init__.
-if "llm_providers" not in sys.modules:
-    _pkg = types.ModuleType("llm_providers")
-    _pkg.__path__ = [str(ROOT / "llm_providers")]
-    sys.modules["llm_providers"] = _pkg
 
 from labeling import SkipPaper, label_paper, result_object_name  # noqa: E402
 from llm_providers.base import LLMResponse  # noqa: E402

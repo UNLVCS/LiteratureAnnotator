@@ -120,6 +120,10 @@ Some members expose optional dependency sets:
 | `data_generation`  | `providers`      | `langchain-anthropic`, `langchain-huggingface`  |
 | `data_analysis`    | `providers`      | `langchain-anthropic`, `langchain-huggingface`, `vllm` |
 
+Backends are imported only when a configured provider uses them, so `local-models` is
+needed only for `vllm_native` (in-process vLLM) and `huggingface` models. Runs that use
+OpenAI, Anthropic, Ollama or an OpenAI-compatible vLLM server never load torch.
+
 Install an extra:
 
 ```bash

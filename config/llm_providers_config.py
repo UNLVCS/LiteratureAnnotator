@@ -3,6 +3,7 @@ LLM provider configuration models.
 Compatible with load_config_from_yaml_file and load_config_from_json_file.
 """
 
+import importlib
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
@@ -10,6 +11,23 @@ from pydantic import BaseModel, ConfigDict, RootModel
 
 if TYPE_CHECKING:
     from llm_providers.base import BaseLLMProvider
+
+# Provider type -> (module, class). Backends are imported only when used: vllm_native
+# pulls in vLLM/torch and huggingface needs transformers, which most runs never touch.
+_PROVIDER_CLASSES: Dict[str, Tuple[str, str]] = {
+    "openai": ("llm_providers.openai_provider", "OpenAIProvider"),
+    "anthropic": ("llm_providers.anthropic_provider", "AnthropicProvider"),
+    "huggingface": ("llm_providers.huggingface_provider", "HuggingFaceProvider"),
+    "vllm": ("llm_providers.vllm_provider", "VLLMProvider"),
+    "vllm_native": ("llm_providers.vllm_native_provider", "VLLMNativeProvider"),
+    "ollama": ("llm_providers.ollama_provider", "OllamaProvider"),
+}
+_LOCAL_PROVIDERS = ("ollama", "vllm", "vllm_native")
+
+
+def _provider_class(provider_type: str) -> type:
+    module_name, class_name = _PROVIDER_CLASSES[provider_type]
+    return getattr(importlib.import_module(module_name), class_name)
 
 
 class LLMProvidersDictMixin:
@@ -41,55 +59,29 @@ class LLMProvidersDictMixin:
         return specs
 
     def get_providers_dict(self) -> "Dict[str, BaseLLMProvider]":
-        """Instantiate providers and return model name -> provider map."""
-        from llm_providers.anthropic_provider import AnthropicProvider
-        from llm_providers.base import BaseLLMProvider
-        from llm_providers.huggingface_provider import HuggingFaceProvider
-        from llm_providers.ollama_provider import OllamaProvider
-        from llm_providers.openai_provider import OpenAIProvider
-        from llm_providers.vllm_native_provider import VLLMNativeProvider
-        from llm_providers.vllm_provider import VLLMProvider
+        """Instantiate providers and return model name -> provider map.
 
-        _local_providers = ("ollama", "vllm", "vllm_native")
-
+        Only the backends that are configured (and not skipped) are imported, so an
+        OpenAI/Anthropic-only config never loads vLLM or torch.
+        """
         providers: Dict[str, BaseLLMProvider] = {}
         for provider_name, provider_config in self._get_providers_config().items():
             for model_cfg, kwargs in provider_config.iter_models():
                 if model_cfg.skip:
                     continue
                 # Local providers do not require a cloud API key.
-                if provider_name not in _local_providers and not kwargs.get("api_key"):
+                if provider_name not in _LOCAL_PROVIDERS and not kwargs.get("api_key"):
                     print(f"Skipping {model_cfg.model} - no API key")
                     continue
-
+                if provider_name not in _PROVIDER_CLASSES:
+                    print(f"Unknown provider: {provider_name}")
+                    continue
                 try:
-                    if provider_name == "openai":
-                        providers[model_cfg.model] = OpenAIProvider(**kwargs)
-                    elif provider_name == "anthropic":
-                        providers[model_cfg.model] = AnthropicProvider(**kwargs)
-                    elif provider_name == "huggingface":
-                        providers[model_cfg.model] = HuggingFaceProvider(**kwargs)
-                    elif provider_name == "vllm":
-                        vk = dict(kwargs)
-                        if not vk.get("api_key"):
-                            vk["api_key"] = "EMPTY"
-                        providers[model_cfg.model] = VLLMProvider(**vk)
-                    elif provider_name == "vllm_native":
-                        vk = dict(kwargs)
-                        vk.pop("api_key", None)
-                        providers[model_cfg.model] = VLLMNativeProvider(**vk)
-                        print(f"Added {model_cfg.model} (vllm_native)")
-                    elif provider_name == "ollama":
-                        candidate = OllamaProvider(**kwargs)
-                        if candidate.check_server_status():
-                            providers[model_cfg.model] = candidate
-                            print(f"Added {model_cfg.model} (ollama)")
-                        else:
-                            print(f"Skipping {model_cfg.model} - ollama server not running")
-                    else:
-                        print(f"Unknown provider: {provider_name}")
+                    providers[model_cfg.model] = instantiate_provider(provider_name, kwargs)
+                    if provider_name in _LOCAL_PROVIDERS:
+                        print(f"Added {model_cfg.model} ({provider_name})")
                 except Exception as e:
-                    print(f"Failed to setup {model_cfg.model}: {e}")
+                    print(f"Skipping {model_cfg.model}: {e}")
 
         return providers
 
@@ -154,37 +146,21 @@ def instantiate_provider(
     Returns:
         Instantiated :class:`~llm_providers.base.BaseLLMProvider`.
     """
-    from llm_providers.anthropic_provider import AnthropicProvider
-    from llm_providers.huggingface_provider import HuggingFaceProvider
-    from llm_providers.ollama_provider import OllamaProvider
-    from llm_providers.openai_provider import OpenAIProvider
-    from llm_providers.vllm_native_provider import VLLMNativeProvider
-    from llm_providers.vllm_provider import VLLMProvider
-
-    _local = ("ollama", "vllm", "vllm_native")
-    if provider_type not in _local and not provider_kwargs.get("api_key"):
+    if provider_type not in _PROVIDER_CLASSES:
+        raise ValueError(f"Unknown provider type: '{provider_type}'")
+    if provider_type not in _LOCAL_PROVIDERS and not provider_kwargs.get("api_key"):
         raise ValueError(f"Provider '{provider_type}' requires an api_key in .env.yaml")
 
-    if provider_type == "openai":
-        return OpenAIProvider(**provider_kwargs)
-    if provider_type == "anthropic":
-        return AnthropicProvider(**provider_kwargs)
-    if provider_type == "huggingface":
-        return HuggingFaceProvider(**provider_kwargs)
-    if provider_type == "vllm":
-        kw = dict(provider_kwargs)
-        kw.setdefault("api_key", "EMPTY")
-        return VLLMProvider(**kw)
+    cls = _provider_class(provider_type)
+    kw = dict(provider_kwargs)
+    if provider_type == "vllm" and not kw.get("api_key"):
+        kw["api_key"] = "EMPTY"
     if provider_type == "vllm_native":
-        kw = dict(provider_kwargs)
         kw.pop("api_key", None)
-        return VLLMNativeProvider(**kw)
-    if provider_type == "ollama":
-        provider = OllamaProvider(**provider_kwargs)
-        if not provider.check_server_status():
-            raise RuntimeError(f"Ollama server not reachable at {provider.base_url}")
-        return provider
-    raise ValueError(f"Unknown provider type: '{provider_type}'")
+    provider = cls(**kw)
+    if provider_type == "ollama" and not provider.check_server_status():
+        raise RuntimeError(f"Ollama server not reachable at {provider.base_url}")
+    return provider
 
 
 class LLMProvidersConfig(LLMProvidersDictMixin, RootModel[Dict[str, LLMProviderConfig]]):
