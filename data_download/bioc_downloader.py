@@ -132,17 +132,31 @@ def search_pubmed(
     return id_list, total_count
 
 
-def _fetch_url(url: str) -> dict | None:
-    """GET *url* and return parsed JSON, or None on error."""
-    try:
-        resp = requests.get(url, timeout=30)
-        if resp.status_code == 404:
-            return None
-        resp.raise_for_status()
-        return resp.json()
-    except requests.RequestException as exc:
-        log.error("Request failed (%s): %s", url, exc)
-        return None
+def _fetch_url(url: str, retries: int = 5) -> dict | None:
+    """GET *url* and return parsed JSON, or None if the article is unavailable.
+
+    The BioC service answers a missing article with 404 or with HTTP 200 and an
+    ``[Error] : No result`` text body. 429 and 5xx are retried with backoff.
+    """
+    for attempt in range(retries):
+        try:
+            resp = requests.get(url, timeout=30)
+            if resp.status_code == 404:
+                return None
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise requests.HTTPError(f"{resp.status_code}", response=resp)
+            resp.raise_for_status()
+            if resp.text.lstrip().startswith("[Error]"):
+                return None
+            return resp.json()
+        except (requests.RequestException, ValueError) as exc:
+            if attempt == retries - 1:
+                log.error("Request failed (%s): %s", url, exc)
+                return None
+            wait = 5 * 2 ** attempt
+            log.warning("Request failed (%s), retrying in %ds", exc, wait)
+            time.sleep(wait)
+    return None
 
 
 def fetch_bioc_article(

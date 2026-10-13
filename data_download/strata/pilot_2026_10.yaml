@@ -1,0 +1,89 @@
+# Pilot corpus for whole-paper labeling and weak-supervision development.
+#
+# Each stratum is a PubMed query aimed at papers that should satisfy, or clearly fail,
+# particular criteria (utilities/criteria.py). `expect` records what the query was
+# designed to produce; it is a noisy prior (usable as a labeling function), not ground
+# truth. Strata without `expect` are hard or unbiased cases.
+#
+# Run (needs MinIO + NCBI access; see data_download/README.md):
+#   python -m data_download.stratified_download data_download/strata/pilot_2026_10.yaml
+
+object_prefix: pilot_2026_10
+seed: 20261013
+
+# Seconds between BioC fetches. The BioC service throttles (429, or 200 with an HTML
+# "Too Many Requests" page) at ~1 request/s, and the NCBI API key does not raise it.
+request_delay: 3.0
+
+# Appended to every stratum query: PMC Open Access (BioC full text exists) and a date range.
+common_filter: '"pubmed pmc open access"[filter] AND 2012:2025[dp]'
+
+# Reusable query fragments, referenced as {name} in stratum queries.
+fragments:
+  AD: '"alzheimer disease"[MeSH Terms]'
+  BLOOD: '(plasma[tiab] OR serum[tiab] OR blood[tiab])'
+  PROTEIN: '(amyloid[tiab] OR tau[tiab] OR p-tau*[tiab] OR "neurofilament light"[tiab] OR GFAP[tiab])'
+
+strata:
+  - name: core_positive
+    description: Human AD blood protein-biomarker research articles (should pass most criteria).
+    query: '{AD} AND {BLOOD} AND {PROTEIN} AND humans[MeSH Terms] AND "journal article"[pt] NOT review[pt]'
+    n: 150
+    expect: {criterion_1: true, criterion_2: true, criterion_4: true, criterion_5: true, criterion_6: true}
+
+  - name: unbiased_ad
+    description: Any open-access AD paper; approximates the natural distribution.
+    query: '{AD}'
+    n: 75
+
+  - name: c1_review
+    description: Reviews of AD blood biomarkers (on-topic but not original research).
+    query: '{AD} AND {BLOOD} AND {PROTEIN} AND (review[pt] OR "systematic review"[pt])'
+    n: 60
+    expect: {criterion_1: false}
+
+  - name: c1_editorial_preprint
+    description: Editorials, comments and preprints on AD biomarkers.
+    query: '{AD} AND biomarkers[MeSH Terms] AND (editorial[pt] OR comment[pt] OR preprint[pt])'
+    n: 60
+    expect: {criterion_1: false}
+
+  - name: c2_other_disease
+    description: Blood protein biomarkers in other neurological diseases, no AD indexing.
+    query: '{BLOOD} AND {PROTEIN} AND ("parkinson disease"[MAJR] OR "amyotrophic lateral sclerosis"[MAJR] OR "multiple sclerosis"[MAJR] OR "brain injuries, traumatic"[MAJR]) NOT {AD}'
+    n: 60
+    expect: {criterion_2: false}
+
+  - name: c3_small_study
+    description: Pilot studies / case series on AD blood biomarkers (likely n < 50).
+    query: '{AD} AND {BLOOD} AND {PROTEIN} AND ("pilot projects"[MeSH Terms] OR "pilot study"[tiab] OR "case series"[tiab])'
+    n: 60
+
+  - name: c4_nucleic_acid
+    description: AD blood studies of miRNA, mRNA, methylation, transcriptome or SNPs.
+    query: '{AD} AND {BLOOD} AND ("microRNAs"[MeSH Terms] OR "RNA, Messenger"[MeSH Terms] OR "DNA methylation"[MeSH Terms] OR "transcriptome"[MeSH Terms] OR "polymorphism, single nucleotide"[MeSH Terms])'
+    n: 60
+    expect: {criterion_4: false}
+
+  - name: c5_animal
+    description: AD animal-model studies measuring plasma/serum, no human indexing.
+    query: '{AD} AND (plasma[tiab] OR serum[tiab]) AND ("mice, transgenic"[MeSH Terms] OR "disease models, animal"[MeSH Terms]) NOT humans[MeSH Terms]'
+    n: 60
+    expect: {criterion_5: false}
+
+  - name: c5_cell_culture
+    description: Human-derived cell / iPSC studies (hard case for the animal criterion).
+    query: '{AD} AND ("induced pluripotent stem cells"[MeSH Terms] OR "cells, cultured"[MeSH Terms]) AND humans[MeSH Terms] NOT (mice[MeSH Terms] OR rats[MeSH Terms])'
+    n: 40
+
+  - name: c6_blood_pressure
+    description: AD and blood pressure / hypertension ("blood" that is not a biomarker).
+    query: '{AD} AND ("blood pressure"[MeSH Terms] OR hypertension[MeSH Terms]) AND humans[MeSH Terms]'
+    n: 60
+    expect: {criterion_6: false}
+
+  - name: c6_csf_pet_only
+    description: AD amyloid/tau studies using CSF or PET with no blood mention in title/abstract.
+    query: '{AD} AND {PROTEIN} AND ("cerebrospinal fluid"[tiab] OR "positron-emission tomography"[MeSH Terms]) AND humans[MeSH Terms] NOT {BLOOD}'
+    n: 60
+    expect: {criterion_6: false}

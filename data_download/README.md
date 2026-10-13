@@ -178,6 +178,33 @@ Downloaded articles are stored as JSON files in your MinIO bucket under
 `bioc_articles/{PMID}.json`. The bucket name is configured via the
 `BIOC_DOWNLOAD_BUCKET` env var (default: `raw-pubmed-articles`).
 
+## Stratified corpora
+
+For labeling and weak-supervision work, a single query gives a corpus that is almost
+all positives. `stratified_download` instead runs several named queries from a YAML
+strata file, samples a target number of full-text papers from each, and writes a
+manifest recording which strata each paper belongs to.
+
+```bash
+uv run python -m data_download.stratified_download data_download/strata/pilot_2026_10.yaml --preview
+uv run python -m data_download.stratified_download data_download/strata/pilot_2026_10.yaml
+```
+
+- Papers land at `{raw_articles_bucket}/{object_prefix}/{pmid}.json`. Only PMC Open
+  Access full text is kept (no abstract fallback).
+- The manifest is written to `{raw_articles_bucket}/manifests/{object_prefix}.json`
+  and `data_download/manifests/{object_prefix}.json`.
+- Sampling is seeded, and re-runs skip papers already in the bucket.
+- A stratum's `expect` block (e.g. `{criterion_6: false}` for blood-pressure papers)
+  records what the query was designed to find. It is a noisy prior for weak
+  supervision, not a label.
+
+`strata/pilot_2026_10.yaml` targets each criterion in `utilities/criteria.py`: core
+positives, an unbiased AD sample, and groups meant to fail one criterion each (reviews
+and editorials, other diseases, small studies, nucleic-acid biomarkers, animal models,
+blood pressure, CSF/PET only), plus a human cell-culture hard case. esearch returns at
+most 9,999 IDs, so very broad strata sample from the most recent 9,999 hits.
+
 ## Configuration
 
 All settings come from `.env.yaml` in the workspace root — the same file used by
