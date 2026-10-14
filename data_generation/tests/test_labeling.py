@@ -56,7 +56,7 @@ def test_labels_every_criterion_over_full_text_and_resolves_evidence():
     })
     result = label_paper(PAPER, "fake-model", provider)
 
-    assert result["schema_version"] == "whole-paper-v1"
+    assert result["schema_version"] == "whole-paper-v2"
     assert result["paper_id"] == "41000001" and result["errors"] == []
     assert [c["criterion"] for c in result["criteria_results"]] == CRITERION_NAMES
     # One call per criterion, each carrying the whole paper but not the references.
@@ -74,6 +74,27 @@ def test_malformed_answer_is_recorded_on_the_criterion_only():
     result = label_paper(PAPER, "fake-model", provider)
     assert result["errors"] == []
     assert "malformed" in result["criteria_results"][0]["error"]
+
+
+def test_not_applicable_only_for_conditional_criteria():
+    provider = FakeProvider({
+        "criterion_3": _answer("criterion_3", "N/A", "A total of 312 patients were recruited"),
+        "criterion_6": _answer("criterion_6", "not_applicable", "A total of 312 patients were recruited"),
+        "criterion_5": _answer("criterion_5", "not_applicable", "A total of 312 patients were recruited"),
+        "criterion_1": json.dumps({"criterion_1": {"satisfied": 1}}),
+    })
+    by_name = {c["criterion"]: c for c in label_paper(PAPER, "fake-model", provider)["criteria_results"]}
+    assert by_name["criterion_3"]["error"] is None
+    assert by_name["criterion_3"]["response"]["criterion_3"]["satisfied"] == "not_applicable"
+    assert by_name["criterion_6"]["error"] is None
+    assert "malformed" in by_name["criterion_5"]["error"]  # criterion 5 always applies
+    assert "malformed" in by_name["criterion_1"]["error"]  # 1 is not a boolean
+
+
+def test_prompts_offer_not_applicable_only_where_allowed():
+    from utilities.criteria import CRITERIA_PROMPTS
+    offered = [n for n, p in zip(CRITERION_NAMES, CRITERIA_PROMPTS) if '"not_applicable"' in p.split("Return JSON only:")[1]]
+    assert offered == ["criterion_3", "criterion_6"]
 
 
 def test_provider_failure_is_a_paper_level_error():

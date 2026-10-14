@@ -166,7 +166,7 @@ Each result is a JSON file at `{output_prefix}/{provider}/{paper_id}.json` in
 
 ```json
 {
-  "schema_version": "whole-paper-v1",
+  "schema_version": "whole-paper-v2",
   "paper_id": "41646005",
   "provider": "gpt-4o-mini",
   "title": "Current potential biomarkers for Alzheimer's disease...",
@@ -191,12 +191,20 @@ Each result is a JSON file at `{output_prefix}/{provider}/{paper_id}.json` in
           "matched": true, "start": 483, "end": 543,
           "section": "Abstract", "section_agrees": true
         }
-      ]
+      ],
+      "finish_reason": "end_turn",
+      "usage": {"input_tokens": 312, "output_tokens": 140, "cache_read_input_tokens": 11873, "...": "..."}
     }
   ],
   "errors": []
 }
 ```
+
+`satisfied` is `true` or `false`, or `"not_applicable"` for the conditional criteria
+(3: sample size, 6: blood as biomarker) when the condition does not hold, e.g. sample
+size for a mouse study. Variants such as `"N/A"` are normalized; any other value is
+recorded as a per-criterion `error`. `whole-paper-v1` records predate this and only
+have booleans.
 
 Results written before the retirement (RAG era, no `schema_version`) have `chunks_used`
 and `full_context` instead of `paper` and `evidence`.

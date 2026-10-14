@@ -15,9 +15,9 @@ from typing import Any, Dict, Optional
 from llm_providers.base import BaseLLMProvider, Query
 from papers import Paper, render_paper, resolve_evidence
 from response_standardizer import standardize_llm_response
-from utilities.criteria import CRITERIA_PROMPTS, CRITERION_NAMES
+from utilities.criteria import CRITERIA_PROMPTS, CRITERION_NAMES, NOT_APPLICABLE, allowed_answers
 
-SCHEMA_VERSION = "whole-paper-v1"
+SCHEMA_VERSION = "whole-paper-v2"  # v2: "not_applicable" answer for conditional criteria
 
 
 
@@ -113,8 +113,10 @@ def label_paper(
         error = None
         if not success or not parsed:
             error = "Failed to parse JSON"
-        elif not isinstance(answer, dict) or not isinstance(answer.get("satisfied"), bool):
+        elif not isinstance(answer, dict) or not _is_allowed(name, _normalize_satisfied(answer.get("satisfied"))):
             error = f"Missing or malformed '{name}.satisfied'"
+        else:
+            answer["satisfied"] = _normalize_satisfied(answer["satisfied"])
         evidence = resolve_evidence(paper, answer.get("evidence")) if isinstance(answer, dict) else []
         # Per-criterion parse errors are kept in the record, not in result["errors"]:
         # the result is still saved, and a malformed answer is a quality signal itself.
@@ -132,6 +134,20 @@ def label_paper(
             }
         )
     return result
+
+
+def _normalize_satisfied(value: Any) -> Any:
+    """Map spelling variants of not-applicable ("N/A", "not applicable") to NOT_APPLICABLE."""
+    if isinstance(value, str) and value.strip().lower().replace("/", "").replace(" ", "_").replace("-", "_") in (
+        "not_applicable", "na",
+    ):
+        return NOT_APPLICABLE
+    return value
+
+
+def _is_allowed(name: str, value: Any) -> bool:
+    # Checked by type, not ``in``: 1 == True in Python, and 1 is not a valid answer.
+    return isinstance(value, bool) or (value == NOT_APPLICABLE and NOT_APPLICABLE in allowed_answers(name))
 
 
 def result_object_name(result: Dict[str, Any], output_prefix: str = "") -> str:

@@ -20,7 +20,9 @@ CRITERIA_INSTRUCTIONS = [
     """Criterion 3 – Sample Size
     If human study: determine if sample size n >= 50.
     - If stated n >= 50 → satisfied=true.
-    - If < 50 → satisfied=false (note: can be relaxed later if other criteria are very strong).""",
+    - If < 50 → satisfied=false (note: can be relaxed later if other criteria are very strong).
+    - If the paper reports no human participants (e.g. animal or cell-only study, review,
+      editorial) → satisfied="not_applicable".""",
 
     # 4) Proteins as biomarkers (exclude gene/RNA/transcript/fragment focus)
     """Criterion 4 – Protein Biomarkers
@@ -38,11 +40,23 @@ CRITERIA_INSTRUCTIONS = [
     # 6) Blood as AD biomarker (not blood pressure)
     """Criterion 6 – Blood as AD Biomarker
     If 'blood' appears, decide if it is used as an AD biomarker (e.g., serum/plasma for amyloid/tau).
-    - Exclude circulatory measures (e.g., blood pressure, hypertension, vascular health).""",
+    - Exclude circulatory measures (e.g., blood pressure, hypertension, vascular health) → satisfied=false.
+    - If blood, serum and plasma are never mentioned → satisfied="not_applicable".""",
 ]
 
 # Criterion names for display and matching
 CRITERION_NAMES = [f"criterion_{i+1}" for i in range(len(CRITERIA_INSTRUCTIONS))]
+
+# Third answer for conditional criteria: the condition does not hold for this paper
+# (e.g. sample size of a mouse study). Kept distinct from false, which means the
+# condition holds and the paper fails it.
+NOT_APPLICABLE = "not_applicable"
+CONDITIONAL_CRITERIA = frozenset({"criterion_3", "criterion_6"})
+
+
+def allowed_answers(name: str) -> tuple:
+    """Valid values of ``satisfied`` for a criterion."""
+    return (True, False, NOT_APPLICABLE) if name in CONDITIONAL_CRITERIA else (True, False)
 
 # Models see the whole paper and must cite where their answer comes from. Quotes are
 # resolved back to the source text (papers.evidence); a quote that cannot be found is
@@ -55,12 +69,14 @@ OUTPUT_FORMAT = """
     - If the decision rests on the ABSENCE of something (e.g. no animal model is ever
       mentioned), return an empty evidence list and say so in the reason.
     Return JSON only:
-    {{"{name}": {{"satisfied": true/false, "reason": "<brief reason>", "evidence": [{{"section": "<section heading>", "quote": "<verbatim text>"}}]}}}}"""
+    {{"{name}": {{"satisfied": {values}, "reason": "<brief reason>", "evidence": [{{"section": "<section heading>", "quote": "<verbatim text>"}}]}}}}"""
 
 
 def build_criterion_prompt(index: int) -> str:
     """Full model prompt for one criterion: instructions + shared output format."""
-    return CRITERIA_INSTRUCTIONS[index] + OUTPUT_FORMAT.format(name=CRITERION_NAMES[index])
+    name = CRITERION_NAMES[index]
+    values = 'true/false/"not_applicable"' if name in CONDITIONAL_CRITERIA else "true/false"
+    return CRITERIA_INSTRUCTIONS[index] + OUTPUT_FORMAT.format(name=name, values=values)
 
 
 CRITERIA_PROMPTS = [build_criterion_prompt(i) for i in range(len(CRITERIA_INSTRUCTIONS))]

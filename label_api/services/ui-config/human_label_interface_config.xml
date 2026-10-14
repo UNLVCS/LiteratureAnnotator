@@ -2,7 +2,8 @@
   Label Studio Labeling Configuration - Human Labeling Project
   Users make classification decisions from the full paper (no LLM pre-labeling).
   Same two-column layout: criteria + full paper (left), evaluation (right).
-  Choices: SATISFIED / NOT_SATISFIED per criterion.
+  Choices: SATISFIED / NOT_SATISFIED per criterion; criteria 3 and 6 (conditional)
+  also offer NOT_APPLICABLE.
 -->
 <View>
 
@@ -50,6 +51,7 @@
       <Choices name="evaluation_criterion_3" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
         <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
         <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_APPLICABLE" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
       </Choices>
       <TextArea name="explanation_criterion_3" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
     </View>
@@ -80,6 +82,7 @@
       <Choices name="evaluation_criterion_6" toName="criteria_display" choice="single" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
         <Choice value="SATISFIED" style="background:rgb(153, 208, 155); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
         <Choice value="NOT_SATISFIED" style="background:rgb(224, 115, 107); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
+        <Choice value="NOT_APPLICABLE" style="background:rgb(222, 220, 216); color: white; padding: 10px 24px; border-radius: 6px; font-weight: 600; font-size: 14px;" />
       </Choices>
       <TextArea name="explanation_criterion_6" toName="criteria_display" placeholder="Explain your decision..." rows="3" style="border: 2px solid #dee2e6; border-radius: 6px; padding: 10px; font-size: 13px; line-height: 1.5;" />
     </View>
