@@ -70,9 +70,10 @@ the same job.
    Vault must be unsealed. Otherwise the MinIO check in step 2 of the job fails, and
    it fails before any GPU time is spent.
 
-4. **Partition and GPUs.** Edit `#SBATCH --partition` and, if needed, `--gres`,
-   `--mem` and `--time` in `label_vllm.sbatch`. `TP` (tensor parallel size) must equal
-   the number of GPUs requested.
+4. **Partition and GPUs.** The script is set up for the UNLV HPC `gpu` partition, a
+   single node `csgpu-app-002` with 2 GPUs, 32 CPUs and 257 GB of RAM. On another
+   cluster, edit `--partition`, `--gres`, `--mem` and `--time`. `TP` defaults to the
+   number of GPUs allocated.
 
 ## Running
 
@@ -84,7 +85,7 @@ PMIDS_FILE=data_download/strata/pilot_2026_10_sample33.txt sbatch slurm/label_vl
 sbatch slurm/label_vllm.sbatch
 
 # Another model or GPU count
-MODEL=meta-llama/Llama-3.1-70B-Instruct TP=4 MAX_TOKENS=1000 sbatch slurm/label_vllm.sbatch
+MODEL=openai/gpt-oss-20b sbatch slurm/label_vllm.sbatch                   # fits one smaller GPU
 ```
 
 The job writes these logs:
@@ -100,7 +101,7 @@ Environment variables:
 | Variable | Default | Meaning |
 |---|---|---|
 | `MODEL` | `openai/gpt-oss-120b` | Hugging Face model id served by vLLM |
-| `TP` | `4` | GPUs to shard the model across |
+| `TP` | GPUs allocated | GPUs to shard the model across |
 | `MAX_TOKENS` | `8000` | Output budget per answer. Reasoning models need room to think before the JSON |
 | `MAX_MODEL_LEN` | `65536` | Context length; the longest pilot papers are about 20k tokens |
 | `RAW_PREFIX` | `pilot_2026_10` | MinIO folder of papers |

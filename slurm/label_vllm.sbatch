@@ -15,10 +15,10 @@
 # =============================================================================
 
 #SBATCH --job-name=la_label
-#SBATCH --partition=CHANGE_ME          # GPU partition (see `sinfo`)
+#SBATCH --partition=gpu                # UNLV HPC: one node, csgpu-app-002 (2 GPUs)
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:4                   # must match TP below
+#SBATCH --gres=gpu:2                   # TP defaults to the GPUs allocated
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --time=24:00:00
@@ -33,7 +33,7 @@ source slurm/cluster.env
 export HF_HOME VAULT_ROLE_ID VAULT_SECRET_ID_FILE
 
 MODEL="${MODEL:-openai/gpt-oss-120b}"
-TP="${TP:-4}"
+TP="${TP:-${SLURM_GPUS_ON_NODE:-2}}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
 RAW_PREFIX="${RAW_PREFIX:-pilot_2026_10}"
 JOB="${SLURM_JOB_ID:-local$$}"
