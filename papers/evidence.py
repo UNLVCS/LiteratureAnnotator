@@ -4,7 +4,8 @@ Resolve model-cited quotes back to exact locations in the source paper.
 The labeler asks models for ``{"section": ..., "quote": <verbatim span>}`` instead of
 page numbers (BioC has none) or offsets (models report numbers unreliably). A quote is
 located by string match against the parsed passages after normalizing whitespace,
-typographic quotes and dashes. A quote that cannot be located is reported as
+typographic quotes and dashes, ignoring in-text figure/table/citation markers and
+punctuation at the ends of the quote. A quote that cannot be located is reported as
 unmatched; that is a hallucinated or paraphrased citation and a useful quality signal.
 """
 
@@ -23,6 +24,17 @@ _CHAR_MAP = {
     " ": " ", " ": " ", " ": " ", " ": " ", " ": " ",
 }
 _ELLIPSIS = re.compile(r"\s*(?:\.\.\.|…|\[\.\.\.\])\s*")
+# In-text figure/table pointers and numeric citations. Models routinely drop these when
+# quoting ("... p < 0.05 (Fig. 2a)." -> "... p < 0.05."), so both the source and the quote
+# are matched with them removed.
+_REFERENCE_MARKERS = re.compile(
+    r"\s*\((?:see\s+|cf\.\s+)?(?:fig|figs|figure|figures|table|tables|suppl|supplementary|additional\s+file|online\s+resource)\b[^()]*\)"
+    r"|\s*\[\d+(?:\s*[,\u2013\u2014-]\s*\d+)*\]",
+    re.IGNORECASE,
+)
+# Trimmed from the ends of each quote fragment: models close a quote with a period or
+# quotation mark even when the source sentence continues.
+_FRAGMENT_EDGE = " \"'.,;:"
 # Fragments shorter than this are too generic to count as a located citation.
 MIN_FRAGMENT_CHARS = 12
 
@@ -47,7 +59,12 @@ def _normalize(text: str) -> Tuple[str, List[int]]:
     index: List[int] = []
     prev_space = True
     after_dash = False
+    skip = set()
+    for m in _REFERENCE_MARKERS.finditer(text):
+        skip.update(range(m.start(), m.end()))
     for i, ch in enumerate(text):
+        if i in skip:
+            continue
         ch = _CHAR_MAP.get(ch, ch)
         if ch.isspace():
             # Collapse runs, and drop spacing around dashes ("a - b" == "a—b").
@@ -99,7 +116,8 @@ def _same_section(cited: Optional[str], located: str) -> Optional[bool]:
 def resolve_quote(paper: Paper, quote: str, cited_section: Optional[str] = None) -> ResolvedEvidence:
     """Locate one quote. Ellipses split it into fragments that must appear in order."""
     fragments = [f for f in (_normalize_plain(p) for p in _ELLIPSIS.split(quote or "")) if f]
-    fragments = [f.strip(" \"'") for f in fragments]
+    fragments = [f.strip(_FRAGMENT_EDGE) for f in fragments]
+    fragments = [f for f in fragments if f]
     if not fragments or max(len(f) for f in fragments) < MIN_FRAGMENT_CHARS:
         return ResolvedEvidence(quote=quote, cited_section=cited_section, matched=False)
 

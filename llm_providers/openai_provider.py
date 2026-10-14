@@ -8,6 +8,18 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from .base import BaseLLMProvider, Query, LLMResponse, retry_with_backoff
 
 
+
+def _usage(response) -> Dict[str, Any]:
+    """Token counts from LangChain's ``usage_metadata`` (cached input reported separately)."""
+    meta = getattr(response, "usage_metadata", None) or {}
+    details = meta.get("input_token_details") or {}
+    return {
+        "prompt_tokens": meta.get("input_tokens", 0),
+        "completion_tokens": meta.get("output_tokens", 0),
+        "cached_prompt_tokens": details.get("cache_read", 0),
+        "total_tokens": meta.get("total_tokens", 0),
+    }
+
 class OpenAIProvider(BaseLLMProvider):
     """
     OpenAI provider implementation using LangChain's ChatOpenAI
@@ -78,11 +90,7 @@ class OpenAIProvider(BaseLLMProvider):
         response = retry_with_backoff(self.llm.invoke, messages)
 
         # Extract usage information
-        usage = {
-            "prompt_tokens": getattr(response, "prompt_tokens", 0),
-            "completion_tokens": getattr(response, "completion_tokens", 0),
-            "total_tokens": getattr(response, "total_tokens", 0),
-        }
+        usage = _usage(response)
 
         # Prepare metadata
         metadata = self._prepare_metadata(
@@ -119,11 +127,7 @@ class OpenAIProvider(BaseLLMProvider):
         results = []
         for query, response in zip(queries, raw_responses):
             model_name = query.model or self.default_model
-            usage = {
-                "prompt_tokens": getattr(response, "prompt_tokens", 0),
-                "completion_tokens": getattr(response, "completion_tokens", 0),
-                "total_tokens": getattr(response, "total_tokens", 0),
-            }
+            usage = _usage(response)
             metadata = self._prepare_metadata(
                 query, {"response_object": str(response), "model_name": model_name}
             )

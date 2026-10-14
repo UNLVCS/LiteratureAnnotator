@@ -29,3 +29,4 @@ vllm-serve.sh
 *.egg
 .eggs/
 uv.lock
+data_generation/dryrun/

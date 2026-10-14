@@ -105,6 +105,10 @@ class Query:
     stop: Optional[List[str]] = None
     system_message: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
+    # Number of leading characters of ``prompt`` that are identical across a batch
+    # (e.g. the paper text). Providers with explicit prompt caching (Anthropic) cache
+    # that prefix; others ignore it and send ``prompt`` unchanged.
+    cache_prefix_len: Optional[int] = None
 
 
 

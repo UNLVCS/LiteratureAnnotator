@@ -108,6 +108,25 @@ def test_ellipsis_fragments_must_appear_in_order():
     assert not resolve_quote(paper, "no animal models were used ... A total of 312 patients").matched
 
 
+def _markers_paper():
+    return parse_bioc("124", [{"source": "PMC", "documents": [{"id": "PMC2", "passages": [
+        _p(0, "RESULTS", "paragraph",
+           "Levels were higher in AD than controls (p < 0.05) (Fig. 2A & B). "
+           "This agrees with earlier cohorts [12, 14-16] and (see Table 3) holds after adjustment."),
+    ]}]}])
+
+
+def test_quote_matches_without_in_text_figure_and_citation_markers():
+    paper = _markers_paper()
+    # Model closes the sentence early and drops the figure pointer.
+    ev = resolve_quote(paper, "Levels were higher in AD than controls (p < 0.05).")
+    assert ev.matched and ev.start == 0
+    # Model drops numeric citations and an inline table pointer mid-quote.
+    assert resolve_quote(paper, "This agrees with earlier cohorts and holds after adjustment").matched
+    # The marker itself is not matchable evidence, and paraphrase still fails.
+    assert not resolve_quote(paper, "Levels were lower in AD than controls").matched
+
+
 def test_section_disagreement_is_reported():
     paper = parse_bioc("123", BIOC)
     ev = resolve_quote(paper, "Plasma was collected by venipuncture", "Results")

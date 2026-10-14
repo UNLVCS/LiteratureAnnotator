@@ -31,16 +31,20 @@ SYSTEM_MESSAGE = (
 )
 
 
-def create_inference_query(paper_text: str, criteria_prompt: str) -> str:
-    """Paper first, task last: keeps the long shared prefix cacheable across criteria."""
+def paper_prefix(paper_text: str) -> str:
+    """Shared start of every criterion prompt for one paper (cacheable)."""
     return f"""Full text of the research paper (references removed):
 
 {paper_text}
 
 ---
 
-Task: {criteria_prompt}
 """
+
+
+def create_inference_query(paper_text: str, criteria_prompt: str) -> str:
+    """Paper first, task last: keeps the long shared prefix cacheable across criteria."""
+    return f"{paper_prefix(paper_text)}Task: {criteria_prompt}\n"
 
 
 def label_paper(
@@ -82,9 +86,11 @@ def label_paper(
     if rendered.passages_total == 0:
         raise SkipPaper(f"{paper.pmid}: no text after parsing")
 
+    prefix_len = len(paper_prefix(rendered.text))
     queries = [
         Query(
             prompt=create_inference_query(rendered.text, prompt),
+            cache_prefix_len=prefix_len,
             system_message=SYSTEM_MESSAGE,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -121,6 +127,8 @@ def label_paper(
                 "cleaned_response": cleaned,
                 "error": error,
                 "evidence": [e.to_dict() for e in evidence],
+                "finish_reason": response.finish_reason,
+                "usage": response.usage,
             }
         )
     return result

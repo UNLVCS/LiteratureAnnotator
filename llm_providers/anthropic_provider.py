@@ -1,11 +1,22 @@
 """
-Anthropic provider implementation using LangChain
+Anthropic provider implementation using the official ``anthropic`` SDK.
+
+Supports prompt caching: when ``Query.cache_prefix_len`` is set, that many leading
+characters of the prompt are sent as a separate content block marked
+``cache_control: ephemeral``. Labeling sends the same paper with six different criterion
+tasks, so after the first call the paper is read from cache at ~10% of the input price.
 """
 
-from typing import List, Dict, Any, Optional
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
-from .base import BaseLLMProvider, Query, LLMResponse, retry_with_backoff
+import re
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional
+
+import anthropic
+
+from .base import BaseLLMProvider, LLMResponse, Query
+
+# Claude 4.7+ and the 5.x family reject non-default temperature/top_p (400).
+_NO_SAMPLING = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-(5|4-7|4-8)")
 
 
 def _anthropic_temperature_top_p(
@@ -22,162 +33,125 @@ def _anthropic_temperature_top_p(
 
 class AnthropicProvider(BaseLLMProvider):
     """
-    Anthropic provider implementation using LangChain's ChatAnthropic
+    Anthropic provider using the Messages API directly.
+
+    Config (``llm_providers.anthropic.models[]`` in .env.yaml) may set ``max_tokens``,
+    ``temperature``, ``top_p``, ``effort`` (``output_config.effort`` on models that
+    support it), ``max_concurrency`` (parallel requests per batch, default 8) and
+    ``cache_ttl`` (``"5m"`` default or ``"1h"``).
     """
-    
+
     def __init__(self, api_key: str, model: Optional[str] = None, **kwargs):
-        """
-        Initialize Anthropic provider
-        
-        Args:
-            api_key: Anthropic API key
-            model: Default model (e.g. ``claude-sonnet-4-6``, ``claude-opus-4-6`` — see Anthropic models docs)
-            **kwargs: Additional Anthropic-specific configuration
-        """
-        super().__init__(api_key, model, **kwargs)
-        temp = kwargs.get("temperature", 0.7)
-        top_p = kwargs.get("top_p", 1.0)
-        t_llm, p_llm = _anthropic_temperature_top_p(temp, top_p)
-        self.llm = ChatAnthropic(
-            anthropic_api_key=api_key,
-            model_name=model or "claude-sonnet-4-6",
-            temperature=t_llm,
-            max_tokens=kwargs.get("max_tokens", 1000),
-            top_p=p_llm,
-        )
-    
+        super().__init__(api_key, model or "claude-sonnet-4-6", **kwargs)
+        # The SDK retries 408/409/429/5xx and connection errors with backoff.
+        self.client = anthropic.Anthropic(api_key=api_key, max_retries=kwargs.get("max_retries", 6))
+        self.max_concurrency = int(kwargs.get("max_concurrency", 8))
+        self.cache_ttl = kwargs.get("cache_ttl")
+
+    def _request(self, query: Query) -> Dict[str, Any]:
+        model = query.model or self.default_model
+        if query.cache_prefix_len:
+            prefix_ctl: Dict[str, Any] = {"type": "ephemeral"}
+            if self.cache_ttl:
+                prefix_ctl["ttl"] = self.cache_ttl
+            content: Any = [
+                {"type": "text", "text": query.prompt[: query.cache_prefix_len], "cache_control": prefix_ctl},
+                {"type": "text", "text": query.prompt[query.cache_prefix_len :]},
+            ]
+        else:
+            content = query.prompt
+
+        params: Dict[str, Any] = {
+            "model": model,
+            "max_tokens": query.max_tokens or self.config.get("max_tokens") or 1000,
+            "messages": [{"role": "user", "content": content}],
+        }
+        if query.system_message:
+            params["system"] = query.system_message
+        if query.stop:
+            params["stop_sequences"] = query.stop
+        # anthropic SDK 1.x dropped the sampling keywords; models before 4.7 still honour
+        # them, so they travel in extra_body (merged into the request JSON as-is).
+        if not _NO_SAMPLING.search(model):
+            temperature, top_p = _anthropic_temperature_top_p(query.temperature, query.top_p)
+            sampling = {k: v for k, v in (("temperature", temperature), ("top_p", top_p)) if v is not None}
+            if sampling:
+                params["extra_body"] = sampling
+        if self.config.get("effort"):
+            params["output_config"] = {"effort": self.config["effort"]}
+        return params
+
     def call_api(self, query: Query) -> LLMResponse:
-        """
-        Call Anthropic API with the provided query
-        
-        Args:
-            query: Query object containing the prompt and parameters
-            
-        Returns:
-            LLMResponse object containing the response and metadata
-        """
         if not self.validate_query(query):
             raise ValueError("Invalid query for Anthropic provider")
-        
-        # Prepare messages
-        messages = []
-        if query.system_message:
-            messages.append(SystemMessage(content=query.system_message))
-        messages.append(HumanMessage(content=query.prompt))
-        
-        # Update model if specified in query
-        model_name = query.model or self.default_model
-        if query.model and query.model != self.default_model:
-            self.llm.model_name = query.model
-        
-        t_llm, p_llm = _anthropic_temperature_top_p(query.temperature, query.top_p)
-        self.llm.temperature = t_llm
-        self.llm.top_p = p_llm
-        if query.max_tokens:
-            self.llm.max_tokens = query.max_tokens
 
-        # Make the API call with exponential backoff for rate-limit / transient errors
-        response = retry_with_backoff(self.llm.invoke, messages)
-        
-        # Extract usage information
+        params = self._request(query)
+        response = self.client.messages.create(**params)
+
+        text = "".join(block.text for block in response.content if block.type == "text")
+        u = response.usage
+        cache_write = u.cache_creation_input_tokens or 0
+        cache_read = u.cache_read_input_tokens or 0
         usage = {
-            'input_tokens': getattr(response, 'input_tokens', 0),
-            'output_tokens': getattr(response, 'output_tokens', 0),
-            'total_tokens': getattr(response, 'input_tokens', 0) + getattr(response, 'output_tokens', 0)
+            "input_tokens": u.input_tokens,
+            "output_tokens": u.output_tokens,
+            "cache_creation_input_tokens": cache_write,
+            "cache_read_input_tokens": cache_read,
+            "total_tokens": u.input_tokens + cache_write + cache_read + u.output_tokens,
         }
-        
-        # Prepare metadata
-        metadata = self._prepare_metadata(query, {
-            'response_object': str(response),
-            'model_name': model_name
-        })
-        
+        metadata = self._prepare_metadata(
+            query, {"model_name": response.model, "request_id": response._request_id}
+        )
         return LLMResponse(
-            content=response.content,
-            model=model_name,
+            content=text,
+            model=response.model,
             usage=usage,
             metadata=metadata,
-            finish_reason=getattr(response, 'stop_reason', None)
+            finish_reason=response.stop_reason,
         )
-    
+
     def call_api_batch(self, queries: List[Query]) -> List[LLMResponse]:
-        """
-        Concurrent batch using LangChain's batch() method, which fires all
-        requests in parallel threads and returns results in the same order.
+        """Concurrent requests, returned in input order.
+
+        When the queries share a cacheable prefix, the first runs alone so it writes
+        the cache; requests sent in parallel before that would all miss it.
         """
         if not queries:
             return []
-
-        messages_list = []
-        for query in queries:
-            msgs = []
-            if query.system_message:
-                msgs.append(SystemMessage(content=query.system_message))
-            msgs.append(HumanMessage(content=query.prompt))
-            messages_list.append(msgs)
-
-        # Batch call with exponential backoff for rate-limit / transient errors
-        raw_responses = retry_with_backoff(self.llm.batch, messages_list)
-
-        results = []
-        for query, response in zip(queries, raw_responses):
-            model_name = query.model or self.default_model
-            usage = {
-                "input_tokens": getattr(response, "input_tokens", 0),
-                "output_tokens": getattr(response, "output_tokens", 0),
-                "total_tokens": getattr(response, "input_tokens", 0) + getattr(response, "output_tokens", 0),
-            }
-            metadata = self._prepare_metadata(
-                query, {"response_object": str(response), "model_name": model_name}
-            )
-            results.append(LLMResponse(
-                content=response.content,
-                model=model_name,
-                usage=usage,
-                metadata=metadata,
-                finish_reason=getattr(response, "stop_reason", None),
-            ))
-        return results
+        first = queries[0]
+        shared_prefix = bool(first.cache_prefix_len) and all(
+            q.cache_prefix_len == first.cache_prefix_len
+            and q.prompt[: q.cache_prefix_len] == first.prompt[: first.cache_prefix_len]
+            for q in queries
+        )
+        head: List[LLMResponse] = []
+        rest = queries
+        if shared_prefix and len(queries) > 1:
+            head = [self.call_api(first)]
+            rest = queries[1:]
+        with ThreadPoolExecutor(max_workers=max(1, min(self.max_concurrency, len(rest)))) as pool:
+            return head + list(pool.map(self.call_api, rest))
 
     def get_available_models(self) -> List[str]:
-        """
-        Get list of available Anthropic models
-        
-        Returns:
-            List of model names
-        """
         # Hints only; validate_query does not require models to be in this list.
         return [
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
             "claude-opus-4-6",
             "claude-sonnet-4-6",
-            "claude-haiku-4-5-20251001",
-            "claude-sonnet-4-5-20250929",
-            "claude-opus-4-20250514",
-            "claude-sonnet-4-20250514",
+            "claude-haiku-4-5",
         ]
-    
+
     def validate_query(self, query: Query) -> bool:
-        """
-        Validate if the query is compatible with Anthropic provider
-        
-        Args:
-            query: Query to validate
-            
-        Returns:
-            True if valid, False otherwise
-        """
         if not query.prompt or not isinstance(query.prompt, str):
             return False
-        
         if query.model is not None and not isinstance(query.model, str):
             return False
-
         if query.temperature < 0 or query.temperature > 1:
             return False
-        
-        if query.max_tokens and (
-            query.max_tokens < 1 or query.max_tokens > 4096
-        ):
+        if query.max_tokens is not None and query.max_tokens < 1:
             return False
-
+        if query.cache_prefix_len is not None and not 0 < query.cache_prefix_len < len(query.prompt):
+            return False
         return True
