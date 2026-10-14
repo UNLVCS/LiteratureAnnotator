@@ -11,6 +11,7 @@ Usage:
     config.llm_providers  # Dict[str, LLMProviderConfig]
 """
 
+import os
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -174,7 +175,8 @@ def _inject_redis_password(url: str, password: str) -> str:
 
 def load_app_config(config_path: Optional[Path] = None, reload: bool = False) -> AppConfig:
     """
-    Load application config from .env.yaml, merging override.env.yaml if present.
+    Load application config from .env.yaml, merging override.env.yaml if present,
+    then the file named by $LA_CONFIG_OVERRIDE if set.
     
     Args:
         config_path: Optional path to base config. Defaults to .env.yaml in project root.
@@ -208,6 +210,13 @@ def load_app_config(config_path: Optional[Path] = None, reload: bool = False) ->
         with open(override_path, "r", encoding="utf-8") as f:
             override = yaml.safe_load(f) or {}
         data = _deep_merge(data, override)
+
+    # Per-process override, e.g. a SLURM job pointing MinIO and the model server at
+    # job-specific tunnel ports without editing shared files.
+    env_override = os.environ.get("LA_CONFIG_OVERRIDE")
+    if env_override:
+        with open(env_override, "r", encoding="utf-8") as f:
+            data = _deep_merge(data, yaml.safe_load(f) or {})
 
     from config.vault_client import fetch_secret_overlay
 

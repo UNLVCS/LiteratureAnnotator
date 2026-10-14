@@ -1,0 +1,117 @@
+#!/bin/bash
+# =============================================================================
+# Whole-paper labeling with an open model served by vLLM on the job's GPUs.
+#
+# The cluster cannot reach vostok's MinIO/Vault ports directly, only SSH, so the
+# job opens an SSH tunnel for MinIO (9000) and Vault (8200), serves the model
+# with `vllm serve` on localhost, and runs data_generation/labeler.py against it.
+# Papers are read from and results written to MinIO on vostok through the tunnel.
+#
+# One-time setup: slurm/README.md. Submit from the repo root:
+#   sbatch slurm/label_vllm.sbatch                         # all papers in RAW_PREFIX
+#   LIMIT=30 sbatch slurm/label_vllm.sbatch                # first 30
+#   PMIDS_FILE=pilot30.txt sbatch slurm/label_vllm.sbatch  # a specific list
+# Reruns skip papers already labeled by the model, so a killed job can resubmit.
+# =============================================================================
+
+#SBATCH --job-name=la_label
+#SBATCH --partition=CHANGE_ME          # GPU partition (see `sinfo`)
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:4                   # must match TP below
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=24:00:00
+#SBATCH --output=logs/label_%j.out
+
+set -euo pipefail
+cd "${SLURM_SUBMIT_DIR:-$PWD}"
+mkdir -p logs
+
+# shellcheck disable=SC1091
+source slurm/cluster.env
+export HF_HOME VAULT_ROLE_ID VAULT_SECRET_ID_FILE
+
+MODEL="${MODEL:-openai/gpt-oss-120b}"
+TP="${TP:-4}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
+RAW_PREFIX="${RAW_PREFIX:-pilot_2026_10}"
+JOB="${SLURM_JOB_ID:-local$$}"
+
+# Job-specific local ports, so several jobs can share a node.
+BASE=$(( 20000 + ${SLURM_JOB_ID:-$$} % 10000 * 3 ))
+MINIO_PORT=$BASE; VAULT_PORT=$((BASE + 1)); VLLM_PORT=$((BASE + 2))
+
+wait_port() {  # wait_port <port> <seconds>
+  for _ in $(seq 1 "$2"); do
+    (echo > "/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
+PIDS=()
+cleanup() { for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done; }
+trap cleanup EXIT
+
+echo "job=$JOB node=$(hostname) model=$MODEL tp=$TP prefix=$RAW_PREFIX started=$(date)"
+nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader || true
+
+# --- 1. SSH tunnel to vostok -------------------------------------------------
+ssh -N -i "$LA_SSH_KEY" \
+    -o BatchMode=yes -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 -o ServerAliveCountMax=4 \
+    -L "$MINIO_PORT:localhost:9000" -L "$VAULT_PORT:localhost:8200" \
+    "$LA_TUNNEL_HOST" &
+PIDS+=($!)
+wait_port "$MINIO_PORT" 30 || { echo "SSH tunnel did not come up"; exit 1; }
+
+export VAULT_ADDR="https://localhost:$VAULT_PORT" VAULT_CACERT="$LA_VAULT_CACERT"
+export LA_CONFIG_OVERRIDE="logs/override_$JOB.yaml"
+cat > "$LA_CONFIG_OVERRIDE" <<EOF
+minio:
+  url: "localhost:$MINIO_PORT"
+llm_providers:
+  vllm:
+    models:
+      - model: "$MODEL"
+        base_url: "http://localhost:$VLLM_PORT/v1"
+        temperature: 0.1
+        max_tokens: ${MAX_TOKENS:-8000}
+        skip: false
+EOF
+
+# --- 2. Environment ------------------------------------------------------------
+uv sync --all-packages --group slurm
+
+# Fail fast (before loading a 65 GB model) if MinIO is not usable through the tunnel.
+uv run --all-packages --group slurm python - <<'EOF'
+from minio import Minio
+from config import load_app_config
+c = load_app_config()
+m = Minio(c.minio.url, access_key=c.minio.access_key, secret_key=c.minio.secret_key, secure=c.minio.secure)
+assert m.bucket_exists(c.minio.raw_articles_bucket), "raw articles bucket not found"
+print("MinIO OK via", c.minio.url)
+EOF
+
+# --- 3. Model server -----------------------------------------------------------
+export VLLM_WORKER_MULTIPROC_METHOD=spawn
+uv run --all-packages --group slurm vllm serve "$MODEL" \
+    --host 127.0.0.1 --port "$VLLM_PORT" \
+    --tensor-parallel-size "$TP" --max-model-len "$MAX_MODEL_LEN" \
+    --gpu-memory-utilization 0.90 \
+    > "logs/vllm_$JOB.log" 2>&1 &
+PIDS+=($!)
+echo "waiting for vLLM (log: logs/vllm_$JOB.log)..."
+wait_port "$VLLM_PORT" 3600 || { echo "vLLM server did not start"; tail -50 "logs/vllm_$JOB.log"; exit 1; }
+until curl -sf "http://127.0.0.1:$VLLM_PORT/health" >/dev/null; do sleep 5; done
+echo "vLLM ready $(date)"
+
+# --- 4. Label --------------------------------------------------------------------
+ARGS=(--providers "$MODEL" --raw-prefix "$RAW_PREFIX" --upload --skip-existing --out "logs/results_$JOB")
+if [ -n "${PMIDS_FILE:-}" ]; then ARGS+=(--pmids-file "$PMIDS_FILE"); else ARGS+=(--from-prefix "$RAW_PREFIX"); fi
+if [ -n "${LIMIT:-}" ]; then ARGS+=(--limit "$LIMIT"); fi
+
+uv run --all-packages --group slurm python data_generation/labeler.py "${ARGS[@]}"
+
+echo "finished $(date)"

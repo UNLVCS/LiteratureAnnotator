@@ -30,3 +30,5 @@ vllm-serve.sh
 .eggs/
 uv.lock
 data_generation/dryrun/
+slurm/cluster.env
+logs/

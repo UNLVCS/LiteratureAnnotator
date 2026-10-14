@@ -5,6 +5,7 @@ vLLM provider implementation using LangChain's ChatOpenAI interface
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from .openai_provider import _usage
 from .base import BaseLLMProvider, Query, LLMResponse
 
 
@@ -72,11 +73,7 @@ class VLLMProvider(BaseLLMProvider):
             raise RuntimeError(f"vLLM API call failed: {str(e)}")
         
         # Extract usage information
-        usage = {
-            'prompt_tokens': getattr(response, 'prompt_tokens', 0),
-            'completion_tokens': getattr(response, 'completion_tokens', 0),
-            'total_tokens': getattr(response, 'total_tokens', 0)
-        }
+        usage = _usage(response)
         
         # Prepare metadata
         metadata = self._prepare_metadata(query, {
@@ -117,11 +114,7 @@ class VLLMProvider(BaseLLMProvider):
         results = []
         for query, response in zip(queries, raw_responses):
             model_name = query.model or self.default_model
-            usage = {
-                "prompt_tokens": getattr(response, "prompt_tokens", 0),
-                "completion_tokens": getattr(response, "completion_tokens", 0),
-                "total_tokens": getattr(response, "total_tokens", 0),
-            }
+            usage = _usage(response)
             metadata = self._prepare_metadata(query, {
                 "response_object": str(response),
                 "model_name": model_name,
