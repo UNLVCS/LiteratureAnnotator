@@ -32,6 +32,12 @@ mkdir -p logs
 source slurm/cluster.env
 export HF_HOME VAULT_ROLE_ID VAULT_SECRET_ID_FILE
 
+# Without Vault the config silently falls back to .env.yaml, which has no MinIO keys.
+[ -n "${VAULT_ROLE_ID:-}" ] || { echo "VAULT_ROLE_ID is empty in slurm/cluster.env"; exit 1; }
+for f in "$VAULT_SECRET_ID_FILE" "$LA_VAULT_CACERT" "$LA_SSH_KEY"; do
+  [ -r "$f" ] || { echo "missing or unreadable: $f (see slurm/cluster.env)"; exit 1; }
+done
+
 MODEL="${MODEL:-openai/gpt-oss-120b}"
 TP="${TP:-${SLURM_GPUS_ON_NODE:-2}}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
