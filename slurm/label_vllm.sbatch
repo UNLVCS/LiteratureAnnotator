@@ -116,6 +116,7 @@ EOF
 
 # --- 3. Model server -----------------------------------------------------------
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
+export PYTHONUNBUFFERED=1   # the log is a file, so Python would otherwise buffer it in 8 KB blocks
 uv run --all-packages --group slurm vllm serve "$MODEL" \
     --host 127.0.0.1 --port "$VLLM_PORT" \
     --tensor-parallel-size "$TP" --max-model-len "$MAX_MODEL_LEN" \
