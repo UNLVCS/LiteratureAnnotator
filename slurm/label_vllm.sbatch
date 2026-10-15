@@ -37,6 +37,10 @@ export HF_HOME VAULT_ROLE_ID VAULT_SECRET_ID_FILE
 for f in "$VAULT_SECRET_ID_FILE" "$LA_VAULT_CACERT" "$LA_SSH_KEY"; do
   [ -r "$f" ] || { echo "missing or unreadable: $f (see slurm/cluster.env)"; exit 1; }
 done
+# The model cache must be writable on the compute node (gpt-oss-120b needs ~65 GB).
+mkdir -p "$HF_HOME" 2>/dev/null && [ -w "$HF_HOME" ] \
+  || { echo "HF_HOME=$HF_HOME is not writable on $(hostname); set HF_HOME in slurm/cluster.env"; exit 1; }
+df -h "$HF_HOME" | tail -1
 
 MODEL="${MODEL:-openai/gpt-oss-120b}"
 TP="${TP:-${SLURM_GPUS_ON_NODE:-2}}"
