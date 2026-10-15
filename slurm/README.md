@@ -94,7 +94,8 @@ The job writes these logs:
 - `logs/results_<job>/`: local copies of each result.
 
 The first run downloads the model weights into `$HF_HOME`, about 65 GB for
-gpt-oss-120b, so point it at scratch storage.
+gpt-oss-120b. It must persist between jobs. On UNLV HPC, `/scratch` is a per-job
+directory, so the default is `$HOME/hf` on the shared home volume.
 
 Environment variables:
 
