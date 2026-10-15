@@ -120,6 +120,10 @@ EOF
 
 # --- 3. Model server -----------------------------------------------------------
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
+# FlashInfer's top-k/top-p sampler is also JIT-compiled at warmup, and that build fails
+# here ("CUDA compiler and CUDA toolkit headers are incompatible"). vLLM's PyTorch
+# sampler needs no build. Set VLLM_USE_FLASHINFER_SAMPLER=1 to try FlashInfer again.
+export VLLM_USE_FLASHINFER_SAMPLER="${VLLM_USE_FLASHINFER_SAMPLER:-0}"
 ATTN_ARGS=(); [ "$ATTN_BACKEND" = auto ] || ATTN_ARGS=(--attention-backend "$ATTN_BACKEND")
 export PYTHONUNBUFFERED=1   # the log is a file, so Python would otherwise buffer it in 8 KB blocks
 uv run --all-packages --group slurm vllm serve "$MODEL" \
