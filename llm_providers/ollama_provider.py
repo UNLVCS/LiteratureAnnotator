@@ -43,17 +43,23 @@ class OllamaProvider(BaseLLMProvider):
         # Prepare the request payload
         model_name = query.model or self.default_model
         
+        # `options` from .env.yaml (e.g. num_ctx) form the base; per-query sampling values
+        # win. Without num_ctx the server's default context applies, and Ollama silently
+        # drops the start of longer prompts (oceanus defaults to 4096 tokens).
+        options = {
+            **(self.config.get('options') or {}),
+            "temperature": query.temperature,
+            "top_p": query.top_p,
+            "num_predict": query.max_tokens or 4000,  # Default to 4000 if not specified
+            "stop": query.stop if query.stop else [],
+        }
+        think = self.config.get('think')
         payload = {
             "model": model_name,
             "prompt": query.prompt,
-            "think": False,
+            "think": False if think is None else think,
             "stream": False,
-            "options": {
-                "temperature": query.temperature,
-                "top_p": query.top_p,
-                "num_predict": query.max_tokens or 4000,  # Default to 4000 if not specified
-                "stop": query.stop if query.stop else [],
-            }
+            "options": options,
         }
         
         # Add system message if provided
