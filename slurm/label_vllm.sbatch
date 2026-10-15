@@ -45,6 +45,10 @@ df -h "$HF_HOME" | tail -1
 MODEL="${MODEL:-openai/gpt-oss-120b}"
 TP="${TP:-${SLURM_GPUS_ON_NODE:-2}}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
+# FlashInfer's attention kernels must be JIT-compiled for SM 12.x (RTX PRO 6000) and
+# that build fails here; Triton attention supports gpt-oss and needs no nvcc build.
+# ATTN_BACKEND=auto lets vLLM choose.
+ATTN_BACKEND="${ATTN_BACKEND:-TRITON_ATTN}"
 RAW_PREFIX="${RAW_PREFIX:-pilot_2026_10}"
 JOB="${SLURM_JOB_ID:-local$$}"
 
@@ -64,7 +68,7 @@ PIDS=()
 cleanup() { for p in "${PIDS[@]:-}"; do kill "$p" 2>/dev/null || true; done; }
 trap cleanup EXIT
 
-echo "job=$JOB node=$(hostname) model=$MODEL tp=$TP prefix=$RAW_PREFIX started=$(date)"
+echo "job=$JOB node=$(hostname) model=$MODEL tp=$TP attn=$ATTN_BACKEND prefix=$RAW_PREFIX started=$(date)"
 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader || true
 
 # --- 1. SSH tunnel to vostok -------------------------------------------------
@@ -116,11 +120,13 @@ EOF
 
 # --- 3. Model server -----------------------------------------------------------
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
+ATTN_ARGS=(); [ "$ATTN_BACKEND" = auto ] || ATTN_ARGS=(--attention-backend "$ATTN_BACKEND")
 export PYTHONUNBUFFERED=1   # the log is a file, so Python would otherwise buffer it in 8 KB blocks
 uv run --all-packages --group slurm vllm serve "$MODEL" \
     --host 127.0.0.1 --port "$VLLM_PORT" \
     --tensor-parallel-size "$TP" --max-model-len "$MAX_MODEL_LEN" \
     --gpu-memory-utilization 0.90 \
+    "${ATTN_ARGS[@]}" \
     > "logs/vllm_$JOB.log" 2>&1 &
 PIDS+=($!)
 echo "waiting for vLLM (log: logs/vllm_$JOB.log)..."
