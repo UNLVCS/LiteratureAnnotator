@@ -94,6 +94,16 @@ EOF
 # --- 2. Environment ------------------------------------------------------------
 uv sync --all-packages --group slurm
 
+# FlashInfer reads the CUDA version from the toolkit (CUDA_HOME, else /usr/local/cuda),
+# not from torch. The node's system toolkit is older than 12.9, so FlashInfer disables
+# its Blackwell (SM 12.x) kernels and gpt-oss fails to load. Use the pip CUDA toolkit
+# that vLLM installs into the venv instead.
+NVCC=$(find .venv/lib/python3*/site-packages/nvidia -path '*/bin/nvcc' -type f 2>/dev/null | head -1)
+[ -n "$NVCC" ] || { echo "no pip nvcc in .venv (nvidia-cuda-nvcc); FlashInfer would use the old system CUDA"; exit 1; }
+export CUDA_HOME="$(cd "$(dirname "$NVCC")/.." && pwd)"
+export PATH="$CUDA_HOME/bin:$PATH"
+echo "CUDA_HOME=$CUDA_HOME ($("$NVCC" --version | grep -o 'release [0-9.]*'))"
+
 # Fail fast (before loading a 65 GB model) if MinIO is not usable through the tunnel.
 uv run --all-packages --group slurm python - <<'EOF'
 from minio import Minio
