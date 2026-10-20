@@ -210,13 +210,32 @@ class BatchLabeler:
         self.kwargs = kwargs
         self.backend = BACKENDS[provider_type](model, kwargs)
         self.token_budget = kwargs.get("batch_token_budget") or self.backend.default_token_budget
-        self.state_path = STATE_DIR / f"{re.sub(r'[^A-Za-z0-9._-]', '_', model)}.json"
+        # One state file per (model, output_prefix), so runs into different prefixes
+        # (e.g. entropy resamples entropy/s01..s05) track their batches separately.
+        self.output_prefix = (self.gen.config.minio.output_prefix or "").strip("/")
+        self.model_slug = re.sub(r"[^A-Za-z0-9._-]", "_", model)
+        slug = self.model_slug + (f"__{re.sub(r'[^A-Za-z0-9._-]', '_', self.output_prefix)}" if self.output_prefix else "")
+        self.state_path = STATE_DIR / f"{slug}.json"
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {"batches": []}
-        self.out_dir = REPO / "logs" / f"results_batch_{re.sub(r'[^A-Za-z0-9._-]', '_', model)}"
+        self.out_dir = REPO / "logs" / f"results_batch_{slug}"
 
     def save_state(self) -> None:
         self.state_path.parent.mkdir(parents=True, exist_ok=True)
         self.state_path.write_text(json.dumps(self.state, indent=2))
+
+    def tokens_in_flight(self) -> int:
+        """Estimated tokens of this model's uncollected batches across every output prefix.
+
+        The provider's enqueued-token limit is per model, not per run, so concurrent runs
+        into different prefixes share one budget.
+        """
+        total = 0
+        for path in STATE_DIR.glob(f"{self.model_slug}*.json"):
+            if path.stem != self.model_slug and not path.stem.startswith(f"{self.model_slug}__"):
+                continue  # a different model whose name merely starts the same way
+            state = self.state if path == self.state_path else json.loads(path.read_text())
+            total += sum(b.get("est_tokens", 0) for b in state["batches"] if not b.get("collected"))
+        return total
 
     def pending(self) -> List[Dict[str, Any]]:
         return [b for b in self.state["batches"] if not b.get("collected")]
@@ -239,7 +258,7 @@ class BatchLabeler:
         todo = [p for p in pmids if p not in in_flight and not self.gen.result_exists(self.model, p)]
         print(f"{self.model}: {len(pmids)} papers, {len(pmids) - len(todo)} already labeled or in a "
               f"pending batch, {len(todo)} to submit")
-        tokens_in_flight = sum(b.get("est_tokens", 0) for b in self.pending())
+        tokens_in_flight = self.tokens_in_flight()
         chunk: List[Dict[str, Any]] = []
         chunk_pmids: List[str] = []
         size = tokens = 0
@@ -258,6 +277,7 @@ class BatchLabeler:
                     "submitted_at": datetime.now(timezone.utc).isoformat(),
                     "raw_prefix": self.gen.raw_prefix(),
                     "bucket": self.gen.config.minio.synthetic_data_bucket,
+                    "output_prefix": self.output_prefix,
                     "pmids": chunk_pmids,
                     "requests": len(chunk),
                     "megabytes": round(size / 1e6, 1),
@@ -343,6 +363,9 @@ class BatchLabeler:
         if b["bucket"] != self.gen.config.minio.synthetic_data_bucket:
             raise SystemExit(f"{b['id']} was submitted for bucket {b['bucket']}, but .env.yaml now names "
                              f"{self.gen.config.minio.synthetic_data_bucket}; restore it to collect")
+        if b.get("output_prefix", "") != self.output_prefix:
+            raise SystemExit(f"{b['id']} was submitted for output_prefix {b.get('output_prefix', '')!r}, but the "
+                             f"config now has {self.output_prefix!r}")
         # Papers are reloaded to resolve evidence quotes; use the folder they were submitted from.
         self.gen.config.papers.raw_prefix = b["raw_prefix"]
         outcomes: Dict[str, Dict[int, Outcome]] = {}
