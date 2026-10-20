@@ -34,13 +34,17 @@ class LabelingGenerator:
     Sequential whole-paper labeling generator that uses multiple LLM providers
     """
 
-    def __init__(self, raw_prefix: Optional[str] = None):
-        """Initialize the labeling generator using config from .env.yaml."""
+    def __init__(self, raw_prefix: Optional[str] = None, load_providers: bool = True):
+        """Initialize the labeling generator using config from .env.yaml.
+
+        ``load_providers=False`` skips instantiating the LLM providers (batch_labeler.py
+        builds its own requests and only needs the MinIO helpers).
+        """
         from config.app_config import load_app_config
         self.config = load_app_config()
         if raw_prefix is not None:
             self.config.papers.raw_prefix = raw_prefix
-        self.providers = self.config.get_providers_dict()
+        self.providers = self.config.get_providers_dict() if load_providers else {}
         from minio import Minio
 
         m = self.config.minio

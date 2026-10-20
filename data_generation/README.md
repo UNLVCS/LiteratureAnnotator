@@ -47,6 +47,7 @@ Redis  ──  ack (success / unlabelable paper) or requeue (provider failure)
 | `labeling.py` | Shared core: `label_paper()` builds the per-criterion queries over the full paper, parses answers, resolves evidence. |
 | `labeler.py` | Sequential labeler — one paper at a time, writes a local JSON file. Good for debugging. |
 | `labeler_mp.py` | Multiprocessing labeler — one worker process per LLM provider, writes to MinIO. Use this in production. |
+| `batch_labeler.py` | OpenAI and Anthropic models through their batch APIs (50% of the live price, results within 24 h). Same result records as the labelers. |
 | `response_standardizer.py` | Cleans LLM responses (strips ` ```json ` fences, extracts embedded JSON) and parses them into dicts. |
 | `tests/` | `pytest` tests for `labeling.py` using a fake provider (no network). |
 
@@ -70,6 +71,25 @@ provider. Results land in the MinIO bucket defined by `minio.synthetic_data_buck
 ```bash
 uv run python data_generation/labeler.py
 ```
+
+### Label with OpenAI / Anthropic batch APIs (half price)
+
+The batch APIs process requests asynchronously (usually within an hour, at most 24 h)
+at 50% of the live price, so `batch_labeler.py` submits and collects in separate steps:
+
+```bash
+uv run python data_generation/batch_labeler.py submit  --model claude-sonnet-5-5 --from-prefix pilot_2026_10 --dry-run
+uv run python data_generation/batch_labeler.py submit  --model claude-sonnet-5-5 --from-prefix pilot_2026_10
+uv run python data_generation/batch_labeler.py status  --model claude-sonnet-5-5
+uv run python data_generation/batch_labeler.py collect --model claude-sonnet-5-5 --wait
+```
+
+`--model` is an enabled model from the `openai` or `anthropic` section of `.env.yaml`.
+`submit` skips papers already in `minio.synthetic_data_bucket` and papers in a batch not
+yet collected, and splits the work to fit each API's batch limits. Batch IDs are kept in
+`logs/batches/<model>.json`. `collect` uploads every paper whose six requests all
+succeeded; run `submit` again to resubmit the rest. Anthropic requests keep the paper
+prefix cacheable (`cache_control`); OpenAI requests share a `prompt_cache_key` per paper.
 
 ### Tests
 

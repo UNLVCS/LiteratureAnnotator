@@ -86,8 +86,10 @@ class AnthropicProvider(BaseLLMProvider):
             raise ValueError("Invalid query for Anthropic provider")
 
         params = self._request(query)
-        response = self.client.messages.create(**params)
+        return self._to_llm_response(query, self.client.messages.create(**params))
 
+    def _to_llm_response(self, query: Query, response: Any) -> LLMResponse:
+        """LLMResponse from a Messages API ``Message`` (live call or batch result)."""
         text = "".join(block.text for block in response.content if block.type == "text")
         u = response.usage
         cache_write = u.cache_creation_input_tokens or 0
@@ -99,8 +101,9 @@ class AnthropicProvider(BaseLLMProvider):
             "cache_read_input_tokens": cache_read,
             "total_tokens": u.input_tokens + cache_write + cache_read + u.output_tokens,
         }
+        # Batch results carry no request id (they are not from an HTTP response).
         metadata = self._prepare_metadata(
-            query, {"model_name": response.model, "request_id": response._request_id}
+            query, {"model_name": response.model, "request_id": getattr(response, "_request_id", None)}
         )
         return LLMResponse(
             content=text,

@@ -10,9 +10,9 @@ and a ``matched`` flag (unmatched = hallucinated or paraphrased citation).
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from llm_providers.base import BaseLLMProvider, Query
+from llm_providers.base import BaseLLMProvider, LLMResponse, Query
 from papers import Paper, render_paper, resolve_evidence
 from response_standardizer import standardize_llm_response
 from utilities.criteria import CRITERIA_PROMPTS, CRITERION_NAMES, NOT_APPLICABLE, allowed_answers
@@ -64,6 +64,31 @@ def label_paper(
     Raises:
         SkipPaper: the paper has no text to label.
     """
+    result, queries = build_queries(paper, provider_name, max_chars, temperature, max_tokens)
+    try:
+        responses = provider.call_api_batch(queries)
+    except Exception as e:
+        result["errors"].append(f"LLM batch call failed: {e}")
+        result["criteria_results"] = [
+            {"criterion": name, "prompt": prompt, "response": None, "error": str(e), "evidence": []}
+            for name, prompt in zip(CRITERION_NAMES, CRITERIA_PROMPTS)
+        ]
+        return result
+    return assemble_result(paper, result, responses)
+
+
+def build_queries(
+    paper: Paper,
+    provider_name: str,
+    max_chars: Optional[int] = None,
+    temperature: float = 0.1,
+    max_tokens: int = 1000,
+) -> Tuple[Dict[str, Any], List[Query]]:
+    """The result record (without answers) and one query per criterion, in CRITERION_NAMES order.
+
+    Raises:
+        SkipPaper: the paper has no text to label.
+    """
     rendered = render_paper(paper, max_chars=max_chars)
     result: Dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
@@ -97,16 +122,11 @@ def label_paper(
         )
         for prompt in CRITERIA_PROMPTS
     ]
-    try:
-        responses = provider.call_api_batch(queries)
-    except Exception as e:
-        result["errors"].append(f"LLM batch call failed: {e}")
-        result["criteria_results"] = [
-            {"criterion": name, "prompt": prompt, "response": None, "error": str(e), "evidence": []}
-            for name, prompt in zip(CRITERION_NAMES, CRITERIA_PROMPTS)
-        ]
-        return result
+    return result, queries
 
+
+def assemble_result(paper: Paper, result: Dict[str, Any], responses: List[LLMResponse]) -> Dict[str, Any]:
+    """Parse one response per criterion (CRITERION_NAMES order) into ``result``."""
     for name, prompt, response in zip(CRITERION_NAMES, CRITERIA_PROMPTS, responses):
         parsed, cleaned, success = standardize_llm_response(response.content)
         answer = (parsed or {}).get(name) if success else None
