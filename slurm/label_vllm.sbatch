@@ -86,12 +86,13 @@ export LA_CONFIG_OVERRIDE="logs/override_$JOB.yaml"
 cat > "$LA_CONFIG_OVERRIDE" <<EOF
 minio:
   url: "localhost:$MINIO_PORT"
+  output_prefix: "${OUTPUT_PREFIX:-}"
 llm_providers:
   vllm:
     models:
       - model: "$MODEL"
         base_url: "http://localhost:$VLLM_PORT/v1"
-        temperature: 0.1
+        temperature: ${TEMPERATURE:-0.1}
         max_tokens: ${MAX_TOKENS:-8000}
         skip: false
 EOF

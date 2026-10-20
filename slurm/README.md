@@ -107,6 +107,8 @@ Environment variables:
 | `ATTN_BACKEND` | `TRITON_ATTN` | vLLM attention backend; `auto` lets vLLM pick (FlashInfer's kernels fail to JIT-compile on the RTX PRO 6000 nodes) |
 | `VLLM_USE_FLASHINFER_SAMPLER` | `0` | Use vLLM's PyTorch sampler; FlashInfer's sampler also fails to JIT-compile on these nodes |
 | `MAX_MODEL_LEN` | `131072` | Context length (gpt-oss-120b's maximum); the longest pilot paper is about 77k tokens, most are 10k–20k |
+| `TEMPERATURE` | `0.1` | Sampling temperature; use ~1.0 for semantic-entropy resamples |
+| `OUTPUT_PREFIX` | unset | Write results under `<prefix>/<provider>/<pmid>.json`, e.g. `entropy/s01` |
 | `RAW_PREFIX` | `pilot_2026_10` | MinIO folder of papers |
 | `PMIDS_FILE` / `LIMIT` | unset | Label only the listed papers / only the first N |
 
