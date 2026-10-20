@@ -106,7 +106,7 @@ Environment variables:
 | `MAX_TOKENS` | `8000` | Output budget per answer. Reasoning models need room to think before the JSON |
 | `ATTN_BACKEND` | `TRITON_ATTN` | vLLM attention backend; `auto` lets vLLM pick (FlashInfer's kernels fail to JIT-compile on the RTX PRO 6000 nodes) |
 | `VLLM_USE_FLASHINFER_SAMPLER` | `0` | Use vLLM's PyTorch sampler; FlashInfer's sampler also fails to JIT-compile on these nodes |
-| `MAX_MODEL_LEN` | `65536` | Context length; the longest pilot papers are about 20k tokens |
+| `MAX_MODEL_LEN` | `131072` | Context length (gpt-oss-120b's maximum); the longest pilot paper is about 77k tokens, most are 10k–20k |
 | `RAW_PREFIX` | `pilot_2026_10` | MinIO folder of papers |
 | `PMIDS_FILE` / `LIMIT` | unset | Label only the listed papers / only the first N |
 

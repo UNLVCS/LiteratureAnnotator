@@ -44,7 +44,8 @@ df -h "$HF_HOME" | tail -1
 
 MODEL="${MODEL:-openai/gpt-oss-120b}"
 TP="${TP:-${SLURM_GPUS_ON_NODE:-2}}"
-MAX_MODEL_LEN="${MAX_MODEL_LEN:-65536}"
+# gpt-oss-120b supports 131072 tokens; the longest pilot paper needs about 77k.
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-131072}"
 # FlashInfer's attention kernels must be JIT-compiled for SM 12.x (RTX PRO 6000) and
 # that build fails here; Triton attention supports gpt-oss and needs no nvcc build.
 # ATTN_BACKEND=auto lets vLLM choose.
