@@ -100,18 +100,6 @@ llm_providers:
 EOF
 }
 write_override "entropy/s01"  # for the MinIO check below
-minio:
-  url: "localhost:$MINIO_PORT"
-  output_prefix: "${OUTPUT_PREFIX:-}"
-llm_providers:
-  vllm:
-    models:
-      - model: "$MODEL"
-        base_url: "http://localhost:$VLLM_PORT/v1"
-        temperature: ${TEMPERATURE:-0.1}
-        max_tokens: ${MAX_TOKENS:-8000}
-        skip: false
-EOF
 
 # --- 2. Environment ------------------------------------------------------------
 uv sync --all-packages --group slurm
