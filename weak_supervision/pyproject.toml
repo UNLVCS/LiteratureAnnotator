@@ -1,19 +1,22 @@
 [project]
 name = "literature-annotator-weak-supervision"
 version = "0.1.0"
-description = "Snorkel-based weak supervision experiments for label quality."
+description = "Labeling functions and a label model that filter LLM-generated training labels."
 requires-python = ">=3.10"
+# The label model is numpy EM, not Snorkel: snorkel pulls torch, too heavy for vostok.
+# Run through weak_supervision/ws.sh rather than `uv sync` (see README).
 dependencies = [
-  "langchain>=0.1.0",
-  "langchain-core>=0.1.0",
-  "langchain-openai>=0.1.0",
-  "langchain-anthropic>=0.1.0",
-  "langchain-huggingface>=0.1.0",
-  "pydantic>=2.0.0",
-  "python-dotenv>=1.0.0",
+  "minio>=7.0",
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "pyarrow>=14.0",
+  "pyyaml>=6.0",
   "requests>=2.31.0",
-  "snorkel>=0.9.9",
+  "tabulate>=0.9",
 ]
+
+[dependency-groups]
+dev = ["pytest>=8.0"]
 
 [tool.uv]
 package = false
