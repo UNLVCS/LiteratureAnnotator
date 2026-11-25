@@ -26,6 +26,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "weak_supervision")]
 
+from config.study_config import load_study
 from utilities.criteria import CRITERION_NAMES, NOT_APPLICABLE  # noqa: E402
 
 DATA_DIR = ROOT / "weak_supervision" / "data"
@@ -110,6 +111,7 @@ def record_rows(record: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "pmid": str(record["paper_id"]),
                 "criterion": name,
                 "provider": record["provider"],
+                **({"sample_index": record["sample_index"]} if "sample_index" in record else {}),
                 "verdict": verdict_str(answer.get("satisfied")) if cr.get("error") is None else None,
                 "reason": answer.get("reason") if isinstance(answer.get("reason"), str) else None,
                 "error": cr.get("error"),
@@ -131,12 +133,13 @@ def record_rows(record: Dict[str, Any]) -> List[Dict[str, Any]]:
     return rows
 
 
-def add_cross_provider(df: pd.DataFrame) -> pd.DataFrame:
+def add_cross_provider(df: pd.DataFrame, aliases=PROVIDERS) -> pd.DataFrame:
     """Columns v_<alias>: each provider's verdict on the same (pmid, criterion)."""
-    wide = df.pivot_table(index=["pmid", "criterion"], columns="provider", values="verdict", aggfunc="first")
-    wide = wide.reindex(columns=list(PROVIDERS)).rename(columns=lambda p: f"v_{PROVIDERS[p]}")
+    keys = ["pmid", "criterion"] + (["sample_index"] if "sample_index" in df else [])
+    wide = df.pivot_table(index=keys, columns="provider", values="verdict", aggfunc="first")
+    wide = wide.reindex(columns=list(aliases)).rename(columns=lambda p: f"v_{aliases[p]}")
     wide.columns.name = None
-    return df.merge(wide.reset_index(), on=["pmid", "criterion"], how="left")
+    return df.merge(wide.reset_index(), on=keys, how="left")
 
 
 def add_strata(df: pd.DataFrame, manifest: Dict[str, Any]) -> pd.DataFrame:
@@ -159,16 +162,22 @@ def add_strata(df: pd.DataFrame, manifest: Dict[str, Any]) -> pd.DataFrame:
 
 
 def build_table(records: Iterable[Dict[str, Any]], manifest: Dict[str, Any],
-                paper_features: Dict[str, Dict[str, Any]]) -> pd.DataFrame:
+                paper_features: Dict[str, Dict[str, Any]], aliases=PROVIDERS) -> pd.DataFrame:
     rows = [row for record in records for row in record_rows(record)]
     df = pd.DataFrame(rows)
-    df["alias"] = df["provider"].map(PROVIDERS)
-    df = add_cross_provider(df)
+    if df.empty:
+        return df
+    df["alias"] = df["provider"].map(aliases)
+    df = add_cross_provider(df, aliases)
     df = add_strata(df, manifest)
     feats = pd.DataFrame.from_dict(paper_features, orient="index")
     feats.index.name = "pmid"
     df = df.merge(feats.reset_index(), on="pmid", how="left")
     df["sample_id"] = df["pmid"] + "|" + df["criterion"] + "|" + df["provider"]
+    if "sample_index" in df:
+        df["sample_id"] += "|" + df["sample_index"].map(lambda i: f"s{i:02d}")
+        if df["sample_id"].duplicated().any():
+            raise ValueError("Duplicate study answer")
     order = {c: i for i, c in enumerate(CRITERION_NAMES)}
     return df.sort_values(["pmid", "criterion", "provider"], key=lambda s: s.map(order) if s.name == "criterion" else s)\
              .reset_index(drop=True)
@@ -200,19 +209,19 @@ def cached_get(client, bucket: str, name: str, cache: Path, refresh: bool = Fals
     return data
 
 
-def list_results(client, bucket: str, prefix: str = "") -> List[str]:
+def list_results(client, bucket: str, prefix: str = "", providers=PROVIDERS) -> List[str]:
     """Result objects ``[<prefix>/]<provider>/<pmid>.json`` for the known providers."""
     base = f"{prefix.strip('/')}/" if prefix else ""
     names = []
-    for provider in PROVIDERS:
+    for provider in providers:
         names += [o.object_name for o in client.list_objects(bucket, prefix=f"{base}{provider}/", recursive=True)
                   if o.object_name.endswith(".json")]
     return names
 
 
-def fetch_records(client, bucket: str, prefix: str = "", refresh: bool = False, workers: int = 16
+def fetch_records(client, bucket: str, prefix: str = "", refresh: bool = False, workers: int = 16, providers=PROVIDERS
                   ) -> List[Dict[str, Any]]:
-    names = list_results(client, bucket, prefix)
+    names = list_results(client, bucket, prefix, providers)
     cache_root = DATA_DIR / "raw" / bucket
 
     def get(name: str) -> Dict[str, Any]:
@@ -222,8 +231,16 @@ def fetch_records(client, bucket: str, prefix: str = "", refresh: bool = False, 
         return list(pool.map(get, names))
 
 
-def fetch_paper_features(app_config, client, pmids: Iterable[str], refresh: bool = False, workers: int = 16
-                         ) -> Dict[str, Dict[str, Any]]:
+def fetch_study_records(client, bucket, study, refresh=False):
+    for index, prefix in enumerate(study.sample_prefixes):
+        for record in fetch_records(client, bucket, prefix, refresh, providers=study.aliases):
+            if record.get("sample_index", index) != index:
+                raise ValueError(f"Sample index conflicts with prefix {prefix}")
+            yield {**record, "sample_index": index}
+
+
+def fetch_paper_features(app_config, client, pmids: Iterable[str], refresh: bool = False, workers: int = 16,
+                         raw_prefix: str = RAW_PREFIX) -> Dict[str, Dict[str, Any]]:
     """blood_mentions / blood_sample_mentions per paper, over the text the models saw."""
     from papers import parse_bioc, render_paper
 
@@ -231,7 +248,7 @@ def fetch_paper_features(app_config, client, pmids: Iterable[str], refresh: bool
     cache_root = DATA_DIR / "raw" / bucket
 
     def features(pmid: str) -> Dict[str, Any]:
-        name = f"{RAW_PREFIX}/{pmid}.json"
+        name = f"{raw_prefix}/{pmid}.json" if raw_prefix else f"{pmid}.json"
         data = json.loads(cached_get(client, bucket, name, cache_root / name, refresh))
         paper = parse_bioc(pmid, data, app_config.papers.exclude_section_types)
         text = render_paper(paper, max_chars=app_config.papers.max_chars).text
@@ -247,15 +264,23 @@ def load_manifest(app_config, client, refresh: bool = False) -> Dict[str, Any]:
     return json.loads(cached_get(client, bucket, MANIFEST, DATA_DIR / "raw" / bucket / MANIFEST, refresh))
 
 
-def snapshot(refresh: bool = False, out: Path = SAMPLES_PATH) -> pd.DataFrame:
+def snapshot(refresh: bool = False, out: Path = SAMPLES_PATH, study=None,
+             manifest_path: Path | None = None, raw_prefix: str = RAW_PREFIX) -> pd.DataFrame:
     from config.app_config import load_app_config
 
     app_config = load_app_config()
     client = minio_client(app_config)
-    records = fetch_records(client, app_config.minio.synthetic_data_bucket, refresh=refresh)
-    manifest = load_manifest(app_config, client, refresh)
-    feats = fetch_paper_features(app_config, client, (str(r["paper_id"]) for r in records), refresh)
-    df = build_table(records, manifest, feats)
+    bucket = "synthetic-data-v3" if study else app_config.minio.synthetic_data_bucket
+    records = (list(fetch_study_records(client, bucket, study, refresh)) if study
+               else fetch_records(client, bucket, refresh=refresh))
+    if manifest_path:
+        manifest = json.loads(manifest_path.read_text())
+    else:
+        manifest = {"strata": [], "papers": {}} if study else load_manifest(app_config, client, refresh)
+    feats = fetch_paper_features(
+        app_config, client, (str(r["paper_id"]) for r in records), refresh, raw_prefix=raw_prefix,
+    )
+    df = build_table(records, manifest, feats, study.aliases if study else PROVIDERS)
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out, index=False)
     print(f"{len(df)} samples from {len(records)} records -> {out}")
@@ -271,8 +296,14 @@ def load_samples(path: Path = SAMPLES_PATH) -> pd.DataFrame:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--refresh", action="store_true", help="Re-download records instead of using the cache.")
+    parser.add_argument("--study-config", type=Path)
+    parser.add_argument("--out", type=Path)
+    parser.add_argument("--manifest", type=Path, help="Optional local stratum manifest for the study.")
+    parser.add_argument("--raw-prefix", default=RAW_PREFIX)
     args = parser.parse_args()
-    snapshot(refresh=args.refresh)
+    study = load_study(args.study_config) if args.study_config else None
+    out = args.out or (DATA_DIR / "study_samples.parquet" if study else SAMPLES_PATH)
+    snapshot(refresh=args.refresh, out=out, study=study, manifest_path=args.manifest, raw_prefix=args.raw_prefix)
 
 
 if __name__ == "__main__":

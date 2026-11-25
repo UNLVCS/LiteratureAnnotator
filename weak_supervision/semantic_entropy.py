@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "weak_supervision")]
 
 from entropy import PREFIXES  # noqa: E402
-from samples import fetch_records, minio_client, record_rows  # noqa: E402
+from config.study_config import load_study
+from samples import fetch_records, fetch_study_records, minio_client, record_rows  # noqa: E402
 
 NLI_MODEL = "microsoft/deberta-v2-xlarge-mnli"  # the model Farquhar et al. used
 OUTPUT_OBJECT = "entropy/semantic_entropy.parquet"
@@ -106,7 +107,7 @@ class NLI:
         return len(self.tok(text)["input_ids"])
 
 
-def group_answers(rows: List[Dict]) -> Dict[str, List[Tuple[str, str, str]]]:
+def group_answers(rows: List[Dict], require_original: bool = True) -> Dict[str, List[Tuple[str, str, str]]]:
     """sample_id -> [(source, verdict, reason)], original first; unparsed answers dropped."""
     groups: Dict[str, List[Tuple[str, str, str]]] = defaultdict(list)
     for r in rows:
@@ -116,10 +117,11 @@ def group_answers(rows: List[Dict]) -> Dict[str, List[Tuple[str, str, str]]]:
         groups[sid].append((r["source"], r["verdict"], r["reason"]))
     for answers in groups.values():
         answers.sort(key=lambda a: (a[0] != "original", a[0]))
-    return {sid: a for sid, a in groups.items() if a[0][0] == "original" and len(a) >= 2}
+    return {sid: a for sid, a in groups.items() if len(a) >= 2 and (not require_original or a[0][0] == "original")}
 
 
-def run(nli: NLI, groups: Dict[str, List[Tuple[str, str, str]]], log_every: int = 1000):
+def run(nli: NLI, groups: Dict[str, List[Tuple[str, str, str]]], log_every: int = 1000,
+        has_original: bool = True):
     import pandas as pd
 
     out = []
@@ -132,6 +134,8 @@ def run(nli: NLI, groups: Dict[str, List[Tuple[str, str, str]]], log_every: int 
         cache = dict(zip(pairs, nli.entailment([(texts[i], texts[j]) for i, j in pairs]))) if pairs else {}
         ids = cluster(verdicts, lambda i, j: cache[(i, j)])
         stats = summarize(ids)
+        if not has_original:
+            del stats["orig_in_largest"]
         stats["n_truncated"] = sum(nli.n_tokens(t) > MAX_LEN // 2 for t in texts)  # a pair holds two answers
         out.append({"sample_id": sid, **stats})
         if k % log_every == 0:
@@ -144,33 +148,42 @@ def main() -> None:
     parser.add_argument("--model", default=NLI_MODEL)
     parser.add_argument("--limit", type=int, help="Only the first N samples (smoke test).")
     parser.add_argument("--no-upload", action="store_true", help="Write locally only.")
+    parser.add_argument("--study-config", type=Path)
     args = parser.parse_args()
 
     from config.app_config import load_app_config
 
     app_config = load_app_config()
     client = minio_client(app_config)
-    bucket = app_config.minio.synthetic_data_bucket
+    study = load_study(args.study_config) if args.study_config else None
+    bucket = "synthetic-data-v3" if study else app_config.minio.synthetic_data_bucket
     rows = []
-    for source, prefix in [("original", ""), *[(p.split("/")[-1], p) for p in PREFIXES]]:
-        records = fetch_records(client, bucket, prefix=prefix)
-        print(f"{source}: {len(records)} records", flush=True)
-        rows += [{**r, "source": source} for rec in records for r in record_rows(rec)]
-    groups = group_answers(rows)
+    if study:
+        for record in fetch_study_records(client, bucket, study):
+            rows.extend({**row, "source": f"s{record['sample_index']:02d}"} for row in record_rows(record))
+    else:
+        for source, prefix in [("original", ""), *[(p.split("/")[-1], p) for p in PREFIXES]]:
+            records = fetch_records(client, bucket, prefix=prefix)
+            print(f"{source}: {len(records)} records", flush=True)
+            rows += [{**r, "source": source} for rec in records for r in record_rows(rec)]
+    groups = group_answers(rows, require_original=study is None)
     if args.limit:
         groups = dict(list(groups.items())[: args.limit])
-    print(f"{len(groups)} samples with >= 1 resample", flush=True)
+    print(f"{len(groups)} groups with at least two answers", flush=True)
 
-    table = run(NLI(args.model), groups)
-    local = ROOT / "weak_supervision" / "data" / "semantic_entropy.parquet"
+    table = run(NLI(args.model), groups, has_original=study is None) if groups else run(None, {})
+    filename = "study_semantic_entropy.parquet" if study else "semantic_entropy.parquet"
+    local = ROOT / "weak_supervision" / "data" / filename
     local.parent.mkdir(parents=True, exist_ok=True)
     table.to_parquet(local, index=False)
-    print(table.describe().to_string())
+    if not table.empty:
+        print(table.describe().to_string())
     if not args.no_upload:
         data = io.BytesIO()
         table.to_parquet(data, index=False)
-        client.put_object(bucket, OUTPUT_OBJECT, io.BytesIO(data.getvalue()), len(data.getvalue()))
-        print(f"uploaded {bucket}/{OUTPUT_OBJECT}")
+        name = f"{Path(study.sample_prefixes[0]).parent.as_posix()}/{filename}" if study else OUTPUT_OBJECT
+        client.put_object(bucket, name, io.BytesIO(data.getvalue()), len(data.getvalue()))
+        print(f"uploaded {bucket}/{name}")
 
 
 if __name__ == "__main__":

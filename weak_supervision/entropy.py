@@ -18,6 +18,7 @@ Prefixes that do not exist yet are skipped; rerun as passes finish.
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import sys
@@ -30,7 +31,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "weak_supervision")]
 
-from samples import DATA_DIR, fetch_records, minio_client, record_rows  # noqa: E402
+from config.study_config import load_study
+from samples import DATA_DIR, fetch_records, fetch_study_records, minio_client, record_rows  # noqa: E402
 
 ENTROPY_PATH = DATA_DIR / "entropy.parquet"
 PREFIXES = [f"entropy/s{k:02d}" for k in range(1, 6)]
@@ -94,8 +96,20 @@ def load_semantic_entropy(path: Path = SEMANTIC_PATH) -> Dict[str, Dict]:
 def main() -> None:
     from config.app_config import load_app_config
 
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--study-config", type=Path)
+    args = parser.parse_args()
     app_config = load_app_config()
     client = minio_client(app_config)
+    if args.study_config:
+        study = load_study(args.study_config)
+        records = fetch_study_records(client, "synthetic-data-v3", study)
+        table = entropy_table([row for record in records for row in record_rows(record)])
+        out = DATA_DIR / "study_entropy.parquet"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        table.to_parquet(out, index=False)
+        print(f"{len(table)} groups -> {out}")
+        return
     rows = []
     for prefix in PREFIXES:
         records = fetch_records(client, app_config.minio.synthetic_data_bucket, prefix=prefix)
