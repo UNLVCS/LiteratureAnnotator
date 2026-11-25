@@ -30,6 +30,8 @@ import json
 import re
 import sys
 import time
+
+import requests
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple
@@ -37,10 +39,13 @@ from typing import Any, Dict, Iterator, List, Optional, Tuple
 sys.path.append(str(Path(__file__).parent.parent))
 sys.path.append(str(Path(__file__).parent))
 
+from config.study_config import StudyModel, load_study
+from llm_providers.openrouter_provider import OpenRouterProvider
+
 from labeler import LabelingGenerator
 from labeling import SkipPaper, assemble_result, build_queries
 from llm_providers.base import LLMResponse, Query
-from papers import PaperNotFoundError, load_paper_from_config
+from papers import PaperNotFoundError, load_paper_from_config, parse_bioc
 from utilities.criteria import CRITERION_NAMES
 
 REPO = Path(__file__).parent.parent
@@ -171,7 +176,10 @@ class OpenAIBatches:
             err = row.get("error") or (resp.get("body") or {}).get("error") or {}
             return cid, (None, f"HTTP {resp.get('status_code')}: {err.get('code')}: {err.get('message')}")
         body = resp["body"]
-        choice = body["choices"][0]
+        choices = body.get("choices") or []
+        if body.get("error") or not choices or choices[0].get("error"):
+            return cid, (None, f"No usable completion: {body.get('error')}")
+        choice = choices[0]
         u = body.get("usage") or {}
         usage = {
             "prompt_tokens": u.get("prompt_tokens", 0),
@@ -185,34 +193,162 @@ class OpenAIBatches:
                 content=choice["message"].get("content") or "",
                 model=body.get("model", self.model),
                 usage=usage,
-                metadata={"provider": "openai", "request_id": resp.get("request_id"), "batch": True},
+                metadata={"provider": "openai", "request_id": resp.get("request_id"),
+                          "created": body.get("created"), "batch": True},
                 finish_reason=choice.get("finish_reason"),
             ),
             None,
         )
 
 
-BACKENDS = {"anthropic": AnthropicBatches, "openai": OpenAIBatches}
+class OpenRouterBatches(OpenAIBatches):
+    """OpenRouter chat completions with one batch-level provider pin."""
+
+    # Bound inline request bodies locally. The service also applies account-specific limits.
+    max_requests = 1_000
+    max_bytes = 20_000_000
+    default_token_budget = None
+    terminal = {"completed", "failed", "expired", "cancelled"}
+
+    def __init__(self, model: str, kwargs: Dict[str, Any]):
+        self.model = model
+        self.kwargs = kwargs
+        self.host = kwargs.get("host")
+        self.provider = OpenRouterProvider(
+            kwargs["api_key"], model, http_client=kwargs.get("http_client"),
+        )
+
+    def request(self, cid: str, query: Query, pmid: str) -> Dict[str, Any]:
+        messages = [{"role": "user", "content": query.prompt}]
+        if query.system_message:
+            messages.insert(0, {"role": "system", "content": query.system_message})
+        body = {"messages": messages, **self.provider._sampling(query)}
+        if self.kwargs.get("reasoning_effort"):
+            body["reasoning"] = {"effort": self.kwargs["reasoning_effort"]}
+        return {"custom_id": cid, "body": body}
+
+    def _http(self, method, path, **kwargs):
+        response = method(
+            f"{self.provider.base_url}/batches{path}",
+            headers=self.provider.headers, timeout=self.provider.timeout, **kwargs,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def submit(self, requests: List[Dict[str, Any]]) -> str:
+        if not self.host:
+            raise ValueError("OpenRouter batch requires a provider pin")
+        if self.kwargs.get("quantization"):
+            raise ValueError("OpenRouter Batch cannot enforce an explicit quantization pin")
+        data = self._http(self.provider.http_client.post, "", json={
+            "endpoint": "/v1/chat/completions",
+            "model": self.model,
+            "provider": {"only": [self.host], "allow_fallbacks": False},
+            "requests": requests,
+        })
+        return data["id"]
+
+    def status(self, batch_id: str) -> Tuple[bool, str]:
+        client = self.provider.http_client
+        try:
+            page = self._http(client.get, f"/{batch_id}/results", params={"limit": 1})
+        except requests.HTTPError as exc:
+            if exc.response is not None and exc.response.status_code == 409:
+                return False, "processing"
+            raise
+        if page["data"]:
+            return True, "results available"
+        batch = self._http(client.get, f"/{batch_id}")
+        return batch["status"] in self.terminal, f"{batch['status']}: {batch.get('request_counts')}"
+
+    def results(self, batch_id: str) -> Iterator[Tuple[str, Outcome]]:
+        client = self.provider.http_client
+        params = {"limit": 100}
+        while True:
+            page = self._http(client.get, f"/{batch_id}/results", params=params)
+            for row in page["data"]:
+                cid, outcome = self._outcome(row)
+                response, error = outcome
+                if response is not None:
+                    body = row["response"]["body"]
+                    response.usage.update(body.get("usage") or {})
+                    response.metadata["provider"] = "openrouter"
+                    response.metadata["created"] = body.get("created")
+                    response.metadata["openrouter"] = {
+                        "host": body.get("provider"),
+                        "quantization": (body.get("openrouter_metadata") or {}).get("quantization"),
+                        "model": body.get("model"),
+                        "generation_id": body.get("id"),
+                        "response_metadata": body.get("openrouter_metadata"),
+                    }
+                yield cid, (response, error)
+            if not page["has_more"]:
+                return
+            cursor = page.get("next_cursor")
+            if not cursor or cursor == params.get("cursor"):
+                raise ValueError(f"Invalid pagination cursor for batch {batch_id}")
+            params["cursor"] = cursor
+
+
+BACKENDS = {"anthropic": AnthropicBatches, "openai": OpenAIBatches, "openrouter": OpenRouterBatches}
 
 
 class BatchLabeler:
-    def __init__(self, model: str, raw_prefix: Optional[str]):
-        self.gen = LabelingGenerator(raw_prefix=raw_prefix, load_providers=False)
-        specs = self.gen.config.get_provider_specs()
-        if model not in specs:
-            raise SystemExit(f"{model} is not an enabled model in .env.yaml (have: {', '.join(specs)})")
-        provider_type, kwargs = specs[model]
+    def __init__(self, model: str, raw_prefix: Optional[str], *,
+                 study=None, sample_index: int = 0, dry_run: bool = False,
+                 papers_dir: Path | None = None):
+        self.papers_dir = papers_dir
+        if papers_dir is None:
+            self.gen = LabelingGenerator(raw_prefix=raw_prefix, load_providers=False)
+            self.config = self.gen.config
+        else:
+            from config.app_config import AppConfig
+
+            self.config = AppConfig()
+            self.gen = None
+        self.study = study
+        self.sample_index = sample_index
+        self.study_model = None
+        self.model = model
+        if study:
+            self.study_model = next((spec for spec in study.models if model in (spec.id, spec.alias)), None)
+            if self.study_model is None:
+                raise SystemExit(f"Unknown study model {model}")
+            spec = self.study_model
+            self.model = model = spec.id
+            provider_type = spec.route
+            # Study settings come entirely from the study config. Only the credential
+            # comes from the standard provider section.
+            kwargs = {
+                "model": spec.id, "host": spec.host, "quantization": spec.quantization,
+                "max_tokens": spec.max_tokens,
+                "temperature": spec.temperature if spec.temperature is not None else 1.0,
+            }
+            if spec.reasoning_mode not in ("default", "always_on"):
+                key = "effort" if spec.route == "anthropic" else "reasoning_effort"
+                kwargs[key] = spec.reasoning_mode
+            if dry_run:
+                kwargs["api_key"] = "offline-dry-run"
+            else:
+                route_config = self.config.llm_providers.get(spec.route)
+                kwargs["api_key"] = route_config.api_key if route_config else None
+            self.config.minio.output_prefix = study.sample_prefixes[sample_index]
+            self.config.minio.synthetic_data_bucket = "synthetic-data-v3"
+        else:
+            specs = self.config.get_provider_specs()
+            if model not in specs:
+                raise SystemExit(f"{model} is not an enabled model in .env.yaml (have: {', '.join(specs)})")
+            provider_type, kwargs = specs[model]
         if provider_type not in BACKENDS:
             raise SystemExit(f"{model} is a {provider_type} model; batch labeling supports {', '.join(BACKENDS)}")
         if not kwargs.get("api_key"):
             raise SystemExit(f"{model}: no api_key in .env.yaml")
-        self.model = model
         self.kwargs = kwargs
         self.backend = BACKENDS[provider_type](model, kwargs)
         self.token_budget = kwargs.get("batch_token_budget") or self.backend.default_token_budget
         # One state file per (model, output_prefix), so runs into different prefixes
         # (e.g. entropy resamples entropy/s01..s05) track their batches separately.
-        self.output_prefix = (self.gen.config.minio.output_prefix or "").strip("/")
+        self.output_prefix = (self.config.minio.output_prefix or "").strip("/")
         self.model_slug = re.sub(r"[^A-Za-z0-9._-]", "_", model)
         slug = self.model_slug + (f"__{re.sub(r'[^A-Za-z0-9._-]', '_', self.output_prefix)}" if self.output_prefix else "")
         self.state_path = STATE_DIR / f"{slug}.json"
@@ -242,26 +378,57 @@ class BatchLabeler:
 
     def build(self, pmid: str) -> Optional[List[Dict[str, Any]]]:
         """The six batch requests for one paper, or None if it cannot be labeled."""
-        paper = load_paper_from_config(pmid, self.gen.config, client=self.gen.minio)
+        if getattr(self, "papers_dir", None) is not None:
+            path = self.papers_dir / f"{pmid}.json"
+            if not path.is_file():
+                raise PaperNotFoundError(str(path))
+            paper = parse_bioc(pmid, json.loads(path.read_text()), self.config.papers.exclude_section_types)
+        else:
+            paper = load_paper_from_config(pmid, self.config, client=self.gen.minio)
         _, queries = build_queries(
             paper,
             self.model,
-            max_chars=self.gen.config.papers.max_chars,
+            max_chars=self.config.papers.max_chars,
             temperature=self.kwargs.get("temperature", 0.1),
             max_tokens=self.kwargs.get("max_tokens") or 16000,
         )
         return [self.backend.request(custom_id(pmid, i), q, pmid) for i, q in enumerate(queries)]
 
+    def check_study_submission(self, pmids: List[str]) -> None:
+        spec = self.study_model
+        if spec is None:
+            return
+        if self.sample_index:
+            original_prefix = self.config.minio.output_prefix
+            try:
+                self.config.minio.output_prefix = self.study.sample_prefixes[0]
+                missing = sum(not self.gen.result_exists(self.model, pmid) for pmid in pmids)
+            finally:
+                self.config.minio.output_prefix = original_prefix
+            if missing:
+                raise SystemExit(f"Collect sample s00 for all requested papers first ({missing} missing)")
+        if not spec.host or not spec.quantization:
+            raise SystemExit(f"{self.model}: study submission requires a verified host and quantization")
+        # None of the configured batch APIs publishes a way to enforce both.
+        raise SystemExit(f"{self.model}: {spec.route} Batch cannot enforce the required quantization pin")
+
     def submit(self, pmids: List[str], dry_run: bool = False) -> int:
         """Submit unlabeled papers within the token budget; returns how many are left over."""
+        spec = getattr(self, "study_model", None)
+        if spec and not dry_run:
+            self.check_study_submission(pmids)
+        if spec and not spec.batch_prices:
+            raise SystemExit(f"{self.model}: configure batch prices before estimating cost")
         in_flight = {p for b in self.pending() for p in b["pmids"]}
-        todo = [p for p in pmids if p not in in_flight and not self.gen.result_exists(self.model, p)]
+        todo = (pmids if getattr(self, "papers_dir", None) is not None else
+                [p for p in pmids if p not in in_flight and not self.gen.result_exists(self.model, p)])
         print(f"{self.model}: {len(pmids)} papers, {len(pmids) - len(todo)} already labeled or in a "
               f"pending batch, {len(todo)} to submit")
-        tokens_in_flight = self.tokens_in_flight()
+        tokens_in_flight = 0 if spec and dry_run else self.tokens_in_flight()
         chunk: List[Dict[str, Any]] = []
         chunk_pmids: List[str] = []
         size = tokens = 0
+        estimated_requests = estimated_input = estimated_output = 0
 
         def flush() -> None:
             nonlocal chunk, chunk_pmids, size, tokens, tokens_in_flight
@@ -276,7 +443,7 @@ class BatchLabeler:
                     "id": batch_id,
                     "submitted_at": datetime.now(timezone.utc).isoformat(),
                     "raw_prefix": self.gen.raw_prefix(),
-                    "bucket": self.gen.config.minio.synthetic_data_bucket,
+                    "bucket": self.config.minio.synthetic_data_bucket,
                     "output_prefix": self.output_prefix,
                     "pmids": chunk_pmids,
                     "requests": len(chunk),
@@ -297,7 +464,11 @@ class BatchLabeler:
                 continue
             paper_bytes = sum(len(json.dumps(r)) for r in requests)
             paper_tokens = int(paper_bytes / CHARS_PER_TOKEN)
-            if self.token_budget and tokens_in_flight + tokens + paper_tokens > self.token_budget:
+            if spec and dry_run:
+                estimated_requests += len(requests)
+                estimated_input += paper_tokens
+                estimated_output += len(requests) * spec.max_tokens
+            if self.token_budget and not (spec and dry_run) and tokens_in_flight + tokens + paper_tokens > self.token_budget:
                 flush()
                 if tokens_in_flight + paper_tokens > self.token_budget:
                     left = len(todo) - i + 1
@@ -314,6 +485,13 @@ class BatchLabeler:
             if i % 100 == 0:
                 print(f"  built {i}/{len(todo)}", flush=True)
         flush()
+        if spec and dry_run:
+            prices = spec.batch_prices
+            input_rate = prices.cache_write if spec.route == "anthropic" and prices.cache_write else prices.input
+            cost = (estimated_input * input_rate + estimated_output * prices.output) / 1e6
+            print(f"{self.model} {self.output_prefix}: {estimated_requests} requests, "
+                  f"~{estimated_input:,} input tokens, up to {estimated_output:,} output tokens, "
+                  f"${cost:.6f} estimated without cache reads")
         return 0
 
     def run(self, pmids: List[str]) -> None:
@@ -360,18 +538,24 @@ class BatchLabeler:
 
     def collect_batch(self, b: Dict[str, Any], detail: str) -> None:
         print(f"collecting {b['id']} ({detail})", flush=True)
-        if b["bucket"] != self.gen.config.minio.synthetic_data_bucket:
+        if b["bucket"] != self.config.minio.synthetic_data_bucket:
             raise SystemExit(f"{b['id']} was submitted for bucket {b['bucket']}, but .env.yaml now names "
-                             f"{self.gen.config.minio.synthetic_data_bucket}; restore it to collect")
+                             f"{self.config.minio.synthetic_data_bucket}; restore it to collect")
         if b.get("output_prefix", "") != self.output_prefix:
             raise SystemExit(f"{b['id']} was submitted for output_prefix {b.get('output_prefix', '')!r}, but the "
                              f"config now has {self.output_prefix!r}")
         # Papers are reloaded to resolve evidence quotes; use the folder they were submitted from.
-        self.gen.config.papers.raw_prefix = b["raw_prefix"]
+        self.config.papers.raw_prefix = b["raw_prefix"]
         outcomes: Dict[str, Dict[int, Outcome]] = {}
         for cid, outcome in self.backend.results(b["id"]):
             pmid, idx = parse_custom_id(cid)
             outcomes.setdefault(pmid, {})[idx] = outcome
+        spec = getattr(self, "study_model", None)
+        if spec:
+            usage = [response.usage for got in outcomes.values() for response, _ in got.values() if response]
+            cost = sum(usage_cost(tokens, spec) for tokens in usage)
+            b["actual_cost_usd"] = cost
+            print(f"  {self.model} {self.output_prefix}: ${cost:.6f} from reported token usage")
         uploaded, failed = 0, []
         for pmid in b["pmids"]:
             got = outcomes.get(pmid, {})
@@ -382,10 +566,31 @@ class BatchLabeler:
                 if outcomes:  # a batch rejected as a whole is reported once, below
                     print(f"  {pmid}: not uploaded ({'; '.join(errors[:2])})")
                 continue
-            paper = load_paper_from_config(pmid, self.gen.config, client=self.gen.minio)
-            result, _ = build_queries(paper, self.model, max_chars=self.gen.config.papers.max_chars)
+            paper = load_paper_from_config(pmid, self.config, client=self.gen.minio)
+            result, _ = build_queries(paper, self.model, max_chars=self.config.papers.max_chars)
             result = assemble_result(paper, result, [got[i][0] for i in range(len(CRITERION_NAMES))])
             result["batch_id"] = b["id"]
+            if spec:
+                result["sample_index"] = self.sample_index
+                for i, record in enumerate(result["criteria_results"]):
+                    response = got[i][0]
+                    routing = (response.metadata or {}).get("openrouter", {})
+                    record["generation"] = {
+                        "model": response.model,
+                        "requested_model": spec.id,
+                        "host": routing.get("host"),
+                        "quantization": routing.get("quantization"),
+                        "temperature": spec.temperature,
+                        "temperature_sent": spec.route != "anthropic" and not (
+                            spec.route == "openai" and _OPENAI_NO_TEMPERATURE.match(spec.id)
+                        ),
+                        "reasoning_mode": spec.reasoning_mode,
+                        "max_tokens": spec.max_tokens,
+                        "batch_id": b["id"],
+                        "response_timestamp": (response.metadata or {}).get("created"),
+                        "collected_at": result["labeled_at"],
+                        "sample_index": self.sample_index,
+                    }
             path = self.out_dir / f"{pmid}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(result, indent=2))
@@ -395,9 +600,36 @@ class BatchLabeler:
         b.update(collected=True, collected_at=datetime.now(timezone.utc).isoformat(),
                  uploaded=uploaded, failed=failed, batch_failed=not outcomes, detail=detail)
         self.save_state()
-        bucket = self.gen.config.minio.synthetic_data_bucket
+        bucket = self.config.minio.synthetic_data_bucket
         print(f"  uploaded {uploaded} to {bucket}/{self.model}/, {len(failed)} failed"
               + (" (run submit again to retry them)" if failed else ""), flush=True)
+
+
+def usage_cost(usage: dict, spec: StudyModel) -> float:
+    if usage.get("cost") is not None:
+        return float(usage["cost"])
+    prices = spec.batch_prices
+    if spec.route == "anthropic":
+        uncached = usage.get("input_tokens", 0)
+        cached = usage.get("cache_read_input_tokens", 0)
+        written = usage.get("cache_creation_input_tokens", 0)
+    else:
+        cached = usage.get("cached_prompt_tokens", 0)
+        details = usage.get("prompt_tokens_details") or {}
+        written = details.get("cache_write_tokens", 0)
+        uncached = max(0, usage.get("prompt_tokens", 0) - cached - written)
+    output = usage.get("output_tokens", usage.get("completion_tokens", 0))
+    return (uncached * prices.input + cached * prices.cached_input + output * prices.output
+            + written * (prices.cache_write if prices.cache_write is not None else prices.input)) / 1e6
+
+
+def read_pmids(path: Path) -> list[str]:
+    data = path.read_text()
+    if path.suffix.lower() == ".json":
+        manifest = json.loads(data)
+        entries = manifest["papers"] if isinstance(manifest, dict) else manifest
+        return [str(pmid) for pmid in entries]
+    return [line.strip() for line in data.splitlines() if line.strip()]
 
 
 def main() -> None:
@@ -410,17 +642,32 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="submit: only the first N papers.")
     parser.add_argument("--dry-run", action="store_true", help="submit: build and size the batches, send nothing.")
     parser.add_argument("--wait", action="store_true", help="collect: poll until every batch has ended.")
+    parser.add_argument("--study-config", type=Path)
+    parser.add_argument("--papers-dir", type=Path, help="Local BioC JSON directory for an offline study dry run.")
+    parser.add_argument("--sample", type=int, choices=range(6), default=0)
     args = parser.parse_args()
+    study = load_study(args.study_config) if args.study_config else None
+    if study and args.command in ("submit", "run") and not args.pmids_file:
+        parser.error("study submissions require --pmids-file")
 
-    labeler = BatchLabeler(args.model, raw_prefix=args.raw_prefix or args.from_prefix)
+    if args.dry_run and args.command != "submit":
+        parser.error("--dry-run applies only to submit")
+    if args.papers_dir and not (study and args.dry_run):
+        parser.error("--papers-dir requires a study dry run")
+    labeler = BatchLabeler(
+        args.model, raw_prefix=args.raw_prefix or args.from_prefix,
+        study=study, sample_index=args.sample, dry_run=args.dry_run, papers_dir=args.papers_dir,
+    )
     if args.command in ("submit", "run"):
         pmids: List[str] = []
         if args.pmids_file:
-            pmids += [line.strip() for line in Path(args.pmids_file).read_text().splitlines() if line.strip()]
-        if args.from_prefix:
+            pmids += read_pmids(Path(args.pmids_file))
+        if args.from_prefix and not study:
             pmids += labeler.gen.list_prefix_pmids()
         if not pmids:
             parser.error(f"{args.command} needs --from-prefix or --pmids-file")
+        if study and any(not re.fullmatch(r"[0-9]+", pmid) for pmid in pmids):
+            parser.error("Study manifest must contain numeric PMIDs")
         pmids = list(dict.fromkeys(pmids))[: args.limit] if args.limit else list(dict.fromkeys(pmids))
         if args.command == "run":
             labeler.run(pmids)
