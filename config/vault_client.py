@@ -34,6 +34,7 @@ _SECRET_MAP = {
     "minio": ("minio", {"access_key": "access_key", "secret_key": "secret_key"}),
     "label-studio": ("label_studio", {"api_key": "api_key"}),
     "ncbi": ("bioc_download", {"api_key": "ncbi_api_key"}),
+    "openrouter": ("llm_providers.openrouter", {"api_key": "api_key"}),
 }
 
 
@@ -122,7 +123,10 @@ class VaultSecretsClient:
                 if secret.get(vault_field)
             }
             if values:
-                overlay.setdefault(section, {}).update(values)
+                target = overlay
+                for part in section.split("."):
+                    target = target.setdefault(part, {})
+                target.update(values)
         return overlay
 
 

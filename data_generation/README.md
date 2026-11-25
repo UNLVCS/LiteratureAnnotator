@@ -125,6 +125,7 @@ The labelers call `provider.call_api_batch(queries)` to send all 6 criterion que
 
 | Provider | Type key | `call_api_batch` mechanism |
 |---|---|---|
+| `OpenRouterProvider` | `openrouter` | OpenAI-compatible chat completions, one request per criterion in order. |
 | `OpenAIProvider` | `openai` | LangChain `llm.batch()` — parallel threads, results in order. Retries with exponential backoff on rate-limit / 429 errors. |
 | `AnthropicProvider` | `anthropic` | LangChain `llm.batch()` — parallel threads. Retries with exponential backoff. Automatically drops `top_p` when `temperature` is set (Claude 4+ constraint). |
 | `VLLMProvider` | `vllm` | LangChain `llm.batch()` — parallel HTTP requests to a running vLLM server. |
@@ -135,6 +136,37 @@ The labelers call `provider.call_api_batch(queries)` to send all 6 criterion que
 The base class default for providers that don't override `call_api_batch` is a
 sequential loop over `call_api` — so any future provider is safe without
 implementing batching explicitly.
+
+### OpenRouter
+
+Store the key as the `api_key` field at the Vault KV path
+`secret/literature-annotator/openrouter`. Enable the `llm_providers.openrouter`
+model entry from `.env.yaml.example` in your `LA_CONFIG_OVERRIDE` file. Set
+`provider.order` to the serving endpoint slug and `provider.quantizations` to
+the approved precision. Set `allow_fallbacks: false` and `require_parameters: true`
+to enforce the route and sampling requirements. Optional `http_referer` and
+`x_title` settings add application attribution headers.
+
+Each criterion's `openrouter` object records the reported host and model, the
+generation ID, requested sampling and routing settings, and any response metadata
+OpenRouter supplies. A missing reported host is stored as `null`. Usage and cost
+are recorded when present. See the
+[OpenRouter chat completions reference](https://openrouter.ai/docs/api/api-reference/chat/send-chat-completion-request).
+
+After spend is approved and Vault is configured, put exactly three pilot PMIDs in
+`three-pmids.txt`. Run this smoke test from a configured checkout with the
+OpenRouter model enabled. In the override, set `skip: true` on any other
+provider entry using the same model ID, including the sample vLLM entry. The
+smoke test sends 18 billable completion requests on a successful run and writes
+the results locally.
+
+```bash
+LA_CONFIG_OVERRIDE=/path/to/openrouter-override.yaml \
+  uv run --no-project --python 3.12 \
+  --with pydantic --with pyyaml --with requests --with hvac --with minio --with redis \
+  python data_generation/labeler.py --pmids-file three-pmids.txt --limit 3 \
+  --raw-prefix pilot_2026_10 --providers openai/gpt-oss-120b --out /tmp/t03-openrouter
+```
 
 ## Configuration
 

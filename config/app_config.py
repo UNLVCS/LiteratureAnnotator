@@ -225,6 +225,11 @@ def load_app_config(config_path: Optional[Path] = None, reload: bool = False) ->
         redis_password = overlay.get("redis", {}).pop("password", None)
         if not overlay.get("redis"):
             overlay.pop("redis", None)
+        # A stored key alone does not enable a provider or define its models.
+        provider_secrets = overlay.pop("llm_providers", {})
+        for name, secret in provider_secrets.items():
+            if name in (data.get("llm_providers") or {}):
+                overlay.setdefault("llm_providers", {})[name] = secret
         data = _deep_merge(data, overlay)
         if redis_password:
             redis_section = data.setdefault("redis", {})

@@ -153,6 +153,9 @@ def assemble_result(paper: Paper, result: Dict[str, Any], responses: List[LLMRes
                 "usage": response.usage,
             }
         )
+        openrouter_metadata = (response.metadata or {}).get("openrouter")
+        if openrouter_metadata is not None:
+            result["criteria_results"][-1]["openrouter"] = openrouter_metadata
     return result
 
 

@@ -14,6 +14,7 @@ from .config_models import LLMModelConfig, LLMProviderConfig, LLMProvidersConfig
 # Backends load on first access (PEP 562), so `import llm_providers` does not pull in
 # vLLM, torch or every langchain integration.
 _LAZY = {
+    "OpenRouterProvider": ".openrouter_provider",
     "OpenAIProvider": ".openai_provider",
     "AnthropicProvider": ".anthropic_provider",
     "HuggingFaceProvider": ".huggingface_provider",
@@ -27,6 +28,7 @@ if TYPE_CHECKING:
     from .huggingface_provider import HuggingFaceProvider
     from .ollama_provider import OllamaProvider
     from .openai_provider import OpenAIProvider
+    from .openrouter_provider import OpenRouterProvider
     from .vllm_native_provider import VLLMNativeProvider
     from .vllm_provider import VLLMProvider
 
@@ -46,6 +48,7 @@ __all__ = [
     'LLMProviderConfig',
     'LLMProvidersConfig',
     'OpenAIProvider',
+    'OpenRouterProvider',
     'AnthropicProvider',
     'HuggingFaceProvider',
     'OllamaProvider',

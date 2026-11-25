@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 # Provider type -> (module, class). Backends are imported only when used: vllm_native
 # pulls in vLLM/torch and huggingface needs transformers, which most runs never touch.
 _PROVIDER_CLASSES: Dict[str, Tuple[str, str]] = {
+    "openrouter": ("llm_providers.openrouter_provider", "OpenRouterProvider"),
     "openai": ("llm_providers.openai_provider", "OpenAIProvider"),
     "anthropic": ("llm_providers.anthropic_provider", "AnthropicProvider"),
     "huggingface": ("llm_providers.huggingface_provider", "HuggingFaceProvider"),
@@ -139,7 +140,7 @@ def instantiate_provider(
 
     Args:
         provider_type: One of ``"openai"``, ``"anthropic"``, ``"huggingface"``,
-                       ``"vllm"``, ``"vllm_native"``, ``"ollama"``.
+                       ``"vllm"``, ``"vllm_native"``, ``"ollama"``, ``"openrouter"``.
         provider_kwargs: Constructor kwargs as returned by
                          :meth:`LLMProvidersDictMixin.get_provider_specs`.
 
