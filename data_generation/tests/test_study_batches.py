@@ -417,3 +417,16 @@ def test_needs_labeling_checks_per_criterion_schema(study, tmp_path):
     for record, needed in ((None, True), (old, True), (new, False)):
         runner.gen = SimpleNamespace(fetch_result=lambda model, pmid, r=record: r)
         assert runner.needs_labeling("1") is needed
+
+
+def test_single_criterion_requests_skip_claude_cache(study, tmp_path):
+    runner = _capped_runner(study, tmp_path, cap=None)
+    (tmp_path / "1.json").write_text(
+        '{"documents":[{"id":"1","passages":[{"offset":0,"text":"' + "A long paper. " * 50 + '"}]}]}'
+    )
+    runner.criteria = [5]
+    content = runner.build("1")[0]["body"]["messages"][-1]["content"]
+    assert isinstance(content, str)  # no cache_control block for a lone request
+    runner.criteria = [1, 5]
+    content = runner.build("1")[0]["body"]["messages"][-1]["content"]
+    assert content[0]["cache_control"]["ttl"] == "1h"

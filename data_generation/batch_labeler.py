@@ -26,6 +26,7 @@ built by the same labeling.build_queries / assemble_result code.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import os
 import re
@@ -465,7 +466,13 @@ class BatchLabeler:
             temperature=self.kwargs.get("temperature", 0.1),
             max_tokens=self.kwargs.get("max_tokens") or 16000,
         )
-        return [self.backend.request(custom_id(pmid, i), queries[i], pmid) for i in self.asked()]
+        asked = self.asked()
+        if len(asked) == 1:
+            # Caching pays off only when several requests share the paper. A lone request
+            # would pay the cache-write premium (2x input for Claude's 1-hour cache) and
+            # never read it back.
+            queries = [dataclasses.replace(q, cache_prefix_len=None) for q in queries]
+        return [self.backend.request(custom_id(pmid, i), queries[i], pmid) for i in asked]
 
     def check_study_submission(self, pmids: List[str]) -> None:
         spec = self.study_model
