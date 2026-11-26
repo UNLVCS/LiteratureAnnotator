@@ -18,8 +18,7 @@ class StudyModel(BaseModel):
     id: str
     alias: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
     route: Literal["anthropic", "openai", "openrouter"]
-    host: str | None = None
-    quantization: str | None = None
+    host: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?$")
     temperature: float | None = Field(default=None, ge=0, le=2)
     reasoning_mode: str = "default"
     max_tokens: int = Field(gt=0)

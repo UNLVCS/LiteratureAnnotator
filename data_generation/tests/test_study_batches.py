@@ -81,12 +81,12 @@ def test_openrouter_batch_uses_documented_pin_and_paginates():
     assert failed is None and "failed" in detail
 
 
-def test_openrouter_refuses_explicit_unsupported_quantization():
+def test_openrouter_refuses_missing_provider_pin():
     client = FakeHTTP()
     batch = OpenRouterBatches("test/model", {
-        "api_key": "fake", "host": "together", "quantization": "fp8", "http_client": client,
+        "api_key": "fake", "http_client": client,
     })
-    with pytest.raises(ValueError, match="quantization"):
+    with pytest.raises(ValueError, match="provider pin"):
         batch.submit([])
     assert client.submitted is None
 
@@ -117,7 +117,11 @@ def test_sample_gate_and_usage_cost(study):
         labeler.check_study_submission(["123"])
     assert labeler.config.minio.output_prefix == study.sample_prefixes[1]
     labeler.gen.result_exists = lambda model, pmid: True
-    with pytest.raises(SystemExit, match="quantization"):
+    for model in study.models:
+        labeler.study_model = model
+        labeler.check_study_submission(["123"])
+    labeler.study_model = study.models[2].model_copy(update={"host": None})
+    with pytest.raises(SystemExit, match="provider pin"):
         labeler.check_study_submission(["123"])
     assert usage_cost({
         "input_tokens": 1_000_000,
@@ -187,3 +191,22 @@ def test_collection_preserves_result_shape_and_records_metadata(study, tmp_path,
         assert answer["generation"]["host"] == "Google Vertex"
         assert answer["generation"]["quantization"] == "fp8"
         assert answer["generation"]["response_timestamp"] == 123
+
+
+@pytest.mark.parametrize("alias", ["opus", "sol", "gemini"])
+def test_study_submit_reaches_backend_without_quantization(study, tmp_path, alias):
+    runner = BatchLabeler(alias, None, study=study, dry_run=True, papers_dir=tmp_path)
+    submitted = []
+    runner.gen = SimpleNamespace(raw_prefix=lambda: "raw-papers")
+    runner.backend.submit = lambda rows: submitted.extend(rows) or "fake-batch"
+    runner.state_path = tmp_path / "state.json"
+    runner.state = {"batches": []}
+    runner.tokens_in_flight = lambda: 0
+    (tmp_path / "123.json").write_text(
+        '{"documents":[{"id":"123","passages":[{"offset":0,"text":"A paper."}]}]}'
+    )
+
+    assert runner.submit(["123"]) == 0
+    assert len(submitted) == 6
+    assert runner.state["batches"][0]["id"] == "fake-batch"
+    assert runner.state["batches"][0]["output_prefix"] == "study_v1/s00"

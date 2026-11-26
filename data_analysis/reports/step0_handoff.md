@@ -10,16 +10,13 @@ server-reported costs when available and otherwise prices reported usage with th
 configured rates. Sample s01 onward requires collected s00 objects for every
 selected PMID. This gate applies before any batch submission.
 
-## Serving constraint
+## Batch routing
 
-**Live study submission is blocked for all six routes.** OpenRouter Batch supports
-`provider.only` and `allow_fallbacks: false` at the batch level. It rejects
-`provider.order` and the other synchronous routing preferences, and a
-`provider` field in a request body does not pin that batch. There is no documented
-batch quantization filter or guarantee that a pinned provider uses a specific
-quantization. Direct Anthropic and OpenAI batch requests likewise expose a model
-ID but no enforceable serving host or quantization. Copying values into the study
-YAML cannot supply these guarantees. [OpenRouter Batch Quickstart](https://openrouter.ai/docs/batch-quickstart#choose-a-provider)
+Study submissions to Anthropic and OpenAI use their direct Batch APIs.
+OpenRouter requests pin a single provider slug with batch-level
+`provider.only` and `allow_fallbacks: false`. OpenRouter rejects synchronous
+routing preferences such as `provider.order` in the batch envelope.
+Quantization is recorded if the result reports it. [OpenRouter Batch Quickstart](https://openrouter.ai/docs/batch-quickstart#choose-a-provider)
 [Anthropic Message Batches](https://platform.claude.com/docs/en/build-with-claude/batch-processing)
 [OpenAI Batch API](https://developers.openai.com/api/docs/guides/batch)
 
@@ -48,8 +45,7 @@ temperature of 1 for the study, and metadata records whether it was sent.
 
 ## Model configuration
 
-The priced routes below are planning candidates. They do not meet the full
-pinning requirement. Rates are USD per million tokens.
+The configured batch routes and rates are listed below. Rates are USD per million tokens.
 
 | Alias | Batch candidate | Public provider slug | Input | Cached input | Output |
 | --- | --- | --- | ---: | ---: | ---: |
@@ -64,8 +60,8 @@ DeepSeek Flash is the cost-oriented choice. The dated Qwen Max is a batch-listed
 flagship-class snapshot. Together had the lowest listed input and output rates on
 the selected DeepSeek and GLM batch pages. The config prices unverified cache
 reads at the full input rate for estimates. Recheck prices for the selected
-account and context length before launch. Confirm the exact revisions and obtain
-enforceable `host` and `quantization` settings before running the study.
+account and context length before launch. Update `host` only for OpenRouter routes
+and review the returned model IDs before submitting later samples.
 [Opus 5.5 pricing](https://platform.claude.com/docs/en/models/opus-5-5/overview)
 [GPT-6.2 Sol pricing](https://developers.openai.com/api/docs/models/gpt-6.2-sol)
 [Gemini batch model](https://openrouter.ai/google/gemini-3.1-pro-preview:batch)
@@ -89,15 +85,15 @@ for model in opus gemini; do
 done
 ```
 
-The following commands describe the live workflow once a route can enforce the
-study pins. The current submission guard will stop them. Set `raw_prefix` to the
+The following commands run the live workflow when invoked in a configured environment.
+Set `raw_prefix` to the
 folder holding the selected BioC papers. To keep smoke outputs and state separate,
 first make a smoke config with the same models and sample prefixes under
 `study_v1_smoke/`.
 
 ```bash
 raw_prefix=pilot_2026_10
-for model in opus gemini; do
+for model in opus sol gemini deepseek qwen glm; do
   uv run python data_generation/batch_labeler.py submit --study-config smoke_models.yaml \
     --model "$model" --sample 0 --raw-prefix "$raw_prefix" --pmids-file pmids.txt --limit 3
   uv run python data_generation/batch_labeler.py collect --study-config smoke_models.yaml \
@@ -119,10 +115,6 @@ sample index and both entropy analyses treat all six samples as repeated draws.
 
 ## Open questions
 
-- Can the serving providers supply a contract or API that guarantees an exact
-  weight revision, quantization and serving route for each batch?
-- If the protocol permits a provider-only pin with undisclosed quantization,
-  which direct and OpenRouter routes should be approved under that amendment?
-- Do OpenRouter's native cache hits and result fields match the study's needs on
-  the chosen routes? This requires a separately authorized small batch after
-  the serving constraint is resolved.
+- Which exact model versions and provider fields appear in the recorded batch results?
+- How often do the chosen routes reuse the paper prefix, and how do the observed
+  token costs compare with the dry-run estimates?

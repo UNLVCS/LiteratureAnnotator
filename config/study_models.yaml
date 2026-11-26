@@ -6,8 +6,8 @@ sample_prefixes:
   - study_v1/s04
   - study_v1/s05
 
-# USD per million tokens. Null host/quantization means no enforceable pin
-# has been verified. Such entries are usable for planning, but not submission.
+# USD per million tokens. OpenRouter uses the listed provider slug.
+# Direct Anthropic and OpenAI routes use their native batch APIs.
 models:
   - id: claude-opus-5-5
     alias: opus

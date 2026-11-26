@@ -236,10 +236,8 @@ class OpenRouterBatches(OpenAIBatches):
         return response.json()
 
     def submit(self, requests: List[Dict[str, Any]]) -> str:
-        if not self.host:
+        if not self.host or not self.host.strip():
             raise ValueError("OpenRouter batch requires a provider pin")
-        if self.kwargs.get("quantization"):
-            raise ValueError("OpenRouter Batch cannot enforce an explicit quantization pin")
         data = self._http(self.provider.http_client.post, "", json={
             "endpoint": "/v1/chat/completions",
             "model": self.model,
@@ -320,7 +318,7 @@ class BatchLabeler:
             # Study settings come entirely from the study config. Only the credential
             # comes from the standard provider section.
             kwargs = {
-                "model": spec.id, "host": spec.host, "quantization": spec.quantization,
+                "model": spec.id, "host": spec.host,
                 "max_tokens": spec.max_tokens,
                 "temperature": spec.temperature if spec.temperature is not None else 1.0,
             }
@@ -407,10 +405,8 @@ class BatchLabeler:
                 self.config.minio.output_prefix = original_prefix
             if missing:
                 raise SystemExit(f"Collect sample s00 for all requested papers first ({missing} missing)")
-        if not spec.host or not spec.quantization:
-            raise SystemExit(f"{self.model}: study submission requires a verified host and quantization")
-        # None of the configured batch APIs publishes a way to enforce both.
-        raise SystemExit(f"{self.model}: {spec.route} Batch cannot enforce the required quantization pin")
+        if spec.route == "openrouter" and not spec.host:
+            raise SystemExit(f"{self.model}: OpenRouter study submission requires a provider pin")
 
     def submit(self, pmids: List[str], dry_run: bool = False) -> int:
         """Submit unlabeled papers within the token budget; returns how many are left over."""
