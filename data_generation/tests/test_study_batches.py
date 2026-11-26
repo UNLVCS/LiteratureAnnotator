@@ -91,17 +91,58 @@ def test_openrouter_refuses_missing_provider_pin():
     assert client.submitted is None
 
 
-def test_opus_and_gpt_use_provider_defaults(study):
-    opus, sol = study.models[:2]
+def test_direct_opus_and_gpt_use_provider_defaults():
     query = Query(prompt="paper and task", cache_prefix_len=5, temperature=1, max_tokens=16000)
-    anthropic = AnthropicBatches(opus.id, {"model": opus.id, "api_key": "fake"})
-    openai = OpenAIBatches(sol.id, {"api_key": "fake"})
+    anthropic = AnthropicBatches("claude-opus-5-5", {"model": "claude-opus-5-5", "api_key": "fake"})
+    openai = OpenAIBatches("gpt-6.2-sol", {"api_key": "fake"})
     params = anthropic.request("123-c1", query, "123")["params"]
     assert not {"temperature", "top_p", "top_k", "thinking"} & params.keys()
     assert params["messages"][0]["content"][0]["cache_control"] == {"type": "ephemeral"}
     body = openai.request("123-c1", query, "123")["body"]
     assert "temperature" not in body
     assert body["max_completion_tokens"] == 16000
+
+
+def _openrouter_body(model, **kwargs):
+    batch = OpenRouterBatches(model, {"api_key": "fake", "host": "x", "http_client": FakeHTTP(), **kwargs})
+    query = Query(prompt="PAPER|task", cache_prefix_len=6, system_message="sys",
+                  temperature=1, max_tokens=16000)
+    return batch.request("123-c1", query, "123")["body"]
+
+
+def test_openrouter_claude_caches_the_paper_and_sends_no_sampling():
+    body = _openrouter_body("anthropic/claude-opus-5.5")
+    system, user = body["messages"]
+    assert system == {"role": "system", "content": "sys"}
+    cached, rest = user["content"]
+    assert cached == {"type": "text", "text": "PAPER|",
+                      "cache_control": {"type": "ephemeral", "ttl": "1h"}}
+    assert rest == {"type": "text", "text": "task"}
+    assert not {"temperature", "top_p", "top_k", "prompt_cache_key"} & body.keys()
+    assert body["max_tokens"] == 16000
+    ttl = _openrouter_body("anthropic/claude-opus-5.5", cache_ttl="5m")["messages"][1]["content"][0]
+    assert ttl["cache_control"]["ttl"] == "5m"
+
+
+def test_openrouter_gpt_gets_cache_key_and_open_models_are_unchanged():
+    body = _openrouter_body("openai/gpt-6.2-sol")
+    assert body["prompt_cache_key"] == "paper-123"
+    assert "temperature" not in body
+    assert body["messages"][1]["content"] == "PAPER|task"
+    body = _openrouter_body("z-ai/glm-5.3")
+    assert body["temperature"] == 1 and "prompt_cache_key" not in body
+    assert body["messages"][1]["content"] == "PAPER|task"
+
+
+@pytest.mark.parametrize("model, sent", [
+    ("claude-opus-5-5", False), ("anthropic/claude-opus-5.5", False),
+    ("anthropic/claude-sonnet-4.7", False), ("anthropic/claude-sonnet-4.5", True),
+    ("gpt-6.2-sol", False), ("openai/gpt-6.2-sol", False), ("openai/gpt-4.1", True),
+    ("z-ai/glm-5.3", True), ("google/gemini-3.1-pro-preview", True),
+])
+def test_sends_temperature(model, sent):
+    from data_generation.batch_labeler import sends_temperature
+    assert sends_temperature(model) is sent
 
 
 def test_sample_gate_and_usage_cost(study):
@@ -123,12 +164,20 @@ def test_sample_gate_and_usage_cost(study):
     labeler.study_model = study.models[2].model_copy(update={"host": None})
     with pytest.raises(SystemExit, match="provider pin"):
         labeler.check_study_submission(["123"])
+    direct_opus = study.models[0].model_copy(update={"route": "anthropic", "host": None})
     assert usage_cost({
         "input_tokens": 1_000_000,
         "cache_read_input_tokens": 1_000_000,
         "cache_creation_input_tokens": 1_000_000,
         "output_tokens": 1_000_000,
-    }, study.models[0]) == pytest.approx(14.7)
+    }, direct_opus) == pytest.approx(16.1)
+    # Through OpenRouter, Claude usage arrives in chat-completions form.
+    assert usage_cost({
+        "prompt_tokens": 3_000_000,
+        "cached_prompt_tokens": 1_000_000,
+        "prompt_tokens_details": {"cache_write_tokens": 1_000_000},
+        "completion_tokens": 1_000_000,
+    }, study.models[0]) == pytest.approx(16.1)
 
 
 def test_manifest_and_offline_dry_run(study, tmp_path, capsys):
@@ -210,3 +259,69 @@ def test_study_submit_reaches_backend_without_quantization(study, tmp_path, alia
     assert len(submitted) == 6
     assert runner.state["batches"][0]["id"] == "fake-batch"
     assert runner.state["batches"][0]["output_prefix"] == "study_v1/s00"
+
+
+def _capped_runner(study, tmp_path, cap):
+    runner = BatchLabeler("opus", None, study=study, dry_run=True, papers_dir=tmp_path)
+    runner.gen = SimpleNamespace(raw_prefix=lambda: "raw-papers")
+    runner.state_path = tmp_path / "state.json"
+    runner.state = {"batches": []}
+    runner.tokens_in_flight = lambda: 0
+    runner.max_batch_usd = cap
+    for pmid in ("1", "2", "3"):
+        (tmp_path / f"{pmid}.json").write_text(
+            '{"documents":[{"id":"%s","passages":[{"offset":0,"text":"A paper."}]}]}' % pmid
+        )
+    return runner
+
+
+def test_batch_cost_cap_splits_batches(study, tmp_path):
+    # Opus worst case per paper is about 6 x 16,000 output tokens x $10/M = $0.96.
+    runner = _capped_runner(study, tmp_path, cap=1.5)
+    batches = []
+    runner.backend.submit = lambda rows: batches.append(rows) or f"b{len(batches)}"
+    assert runner.submit(["1", "2", "3"]) == 0
+    assert [len(rows) for rows in batches] == [6, 6, 6]
+    assert [b["pmids"] for b in runner.state["batches"]] == [["1"], ["2"], ["3"]]
+
+    runner = _capped_runner(study, tmp_path, cap=None)
+    batches = []
+    runner.backend.submit = lambda rows: batches.append(rows) or "one"
+    assert runner.submit(["1", "2", "3"]) == 0
+    assert [len(rows) for rows in batches] == [18]
+
+
+def test_insufficient_balance_stops_and_reports_unsent_papers(study, tmp_path, capsys):
+    from data_generation.batch_labeler import InsufficientBalance
+
+    runner = _capped_runner(study, tmp_path, cap=1.5)
+    calls = []
+
+    def submit(rows):
+        calls.append(rows)
+        if len(calls) == 2:
+            raise InsufficientBalance("insufficient credits")
+        return "b1"
+
+    runner.backend.submit = submit
+    assert runner.submit(["1", "2", "3"]) == 2
+    assert [b["pmids"] for b in runner.state["batches"]] == [["1"]]
+    assert "insufficient balance" in capsys.readouterr().out
+
+
+def test_openrouter_maps_402_to_insufficient_balance():
+    import requests
+    from data_generation.batch_labeler import InsufficientBalance
+
+    class Refusing(FakeHTTP):
+        def post(self, url, *, json, **kwargs):
+            response = SimpleNamespace(status_code=402, text="Insufficient credits")
+            error = requests.HTTPError(response=response)
+
+            def fail():
+                raise error
+            return SimpleNamespace(raise_for_status=fail, json=lambda: {})
+
+    batch = OpenRouterBatches("test/model", {"api_key": "fake", "host": "x", "http_client": Refusing()})
+    with pytest.raises(InsufficientBalance, match="Insufficient credits"):
+        batch.submit([{"custom_id": "1-c1", "body": {}}])

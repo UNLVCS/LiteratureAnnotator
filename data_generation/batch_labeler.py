@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -56,8 +57,21 @@ CHARS_PER_TOKEN = 3.5
 
 # Reasoning models (o-series, gpt-5+) accept only the default temperature.
 _OPENAI_NO_TEMPERATURE = re.compile(r"^(o\d|gpt-[5-9])")
+# Claude 4.7+ and the 5.x family reject sampling parameters. OpenRouter IDs use dots
+# (anthropic/claude-opus-5.5), Anthropic's use dashes (claude-opus-5-5).
+_ANTHROPIC_NO_SAMPLING = re.compile(r"claude-(opus|sonnet|haiku|fable|mythos)-(5|4[-.][78])")
+
+
+def sends_temperature(model_id: str) -> bool:
+    """Whether requests for this model carry temperature (bare or OpenRouter author/model ID)."""
+    name = model_id.rpartition("/")[2]
+    return not (_OPENAI_NO_TEMPERATURE.match(name) or _ANTHROPIC_NO_SAMPLING.search(name))
 
 Outcome = Tuple[Optional[LLMResponse], Optional[str]]  # (response, error)
+
+
+class InsufficientBalance(Exception):
+    """The provider refused a batch because its worst-case cost exceeds the balance (HTTP 402)."""
 
 
 def custom_id(pmid: str, criterion_index: int) -> str:
@@ -219,10 +233,27 @@ class OpenRouterBatches(OpenAIBatches):
         )
 
     def request(self, cid: str, query: Query, pmid: str) -> Dict[str, Any]:
-        messages = [{"role": "user", "content": query.prompt}]
+        content: Any = query.prompt
+        if query.cache_prefix_len and self.model.startswith("anthropic/"):
+            # Claude caches only at explicit breakpoints. A paper's six requests share the
+            # paper text; batch requests run concurrently and in any order, so OpenRouter
+            # recommends the 1-hour TTL to keep the prefix warm across the batch.
+            content = [
+                {"type": "text", "text": query.prompt[: query.cache_prefix_len],
+                 "cache_control": {"type": "ephemeral", "ttl": self.kwargs.get("cache_ttl") or "1h"}},
+                {"type": "text", "text": query.prompt[query.cache_prefix_len :]},
+            ]
+        messages = [{"role": "user", "content": content}]
         if query.system_message:
             messages.insert(0, {"role": "system", "content": query.system_message})
         body = {"messages": messages, **self.provider._sampling(query)}
+        if not sends_temperature(self.model):
+            for name in ("temperature", "top_p", "top_k"):
+                body.pop(name, None)
+        if self.model.startswith("openai/"):
+            # OpenAI caches long prefixes automatically; the key keeps a paper's six
+            # requests on the same cache.
+            body["prompt_cache_key"] = f"paper-{pmid}"
         if self.kwargs.get("reasoning_effort"):
             body["reasoning"] = {"effort": self.kwargs["reasoning_effort"]}
         return {"custom_id": cid, "body": body}
@@ -235,15 +266,21 @@ class OpenRouterBatches(OpenAIBatches):
         response.raise_for_status()
         return response.json()
 
-    def submit(self, requests: List[Dict[str, Any]]) -> str:
+    def submit(self, rows: List[Dict[str, Any]]) -> str:
         if not self.host or not self.host.strip():
             raise ValueError("OpenRouter batch requires a provider pin")
-        data = self._http(self.provider.http_client.post, "", json={
-            "endpoint": "/v1/chat/completions",
-            "model": self.model,
-            "provider": {"only": [self.host], "allow_fallbacks": False},
-            "requests": requests,
-        })
+        try:
+            data = self._http(self.provider.http_client.post, "", json={
+                "endpoint": "/v1/chat/completions",
+                "model": self.model,
+                "provider": {"only": [self.host], "allow_fallbacks": False},
+                "requests": rows,
+            })
+        except requests.HTTPError as exc:
+            response = exc.response
+            if response is not None and response.status_code == 402:
+                raise InsufficientBalance(response.text[:300]) from exc
+            raise
         return data["id"]
 
     def status(self, batch_id: str) -> Tuple[bool, str]:
@@ -257,7 +294,11 @@ class OpenRouterBatches(OpenAIBatches):
         if page["data"]:
             return True, "results available"
         batch = self._http(client.get, f"/{batch_id}")
-        return batch["status"] in self.terminal, f"{batch['status']}: {batch.get('request_counts')}"
+        detail = f"{batch['status']}: {batch.get('request_counts')}"
+        error = (batch.get("error") or {}).get("message")
+        if error:
+            detail += f" error={error}"
+        return batch["status"] in self.terminal, detail
 
     def results(self, batch_id: str) -> Iterator[Tuple[str, Outcome]]:
         client = self.provider.http_client
@@ -344,6 +385,10 @@ class BatchLabeler:
         self.kwargs = kwargs
         self.backend = BACKENDS[provider_type](model, kwargs)
         self.token_budget = kwargs.get("batch_token_budget") or self.backend.default_token_budget
+        # OpenRouter refuses (402) a batch whose worst case, every request using its full
+        # max_tokens, exceeds the account balance. LA_MAX_BATCH_USD caps that worst case
+        # per batch; a 402 stops submission cleanly so `run` retries after a collect.
+        self.max_batch_usd = float(os.environ.get("LA_MAX_BATCH_USD") or 0) or None
         # One state file per (model, output_prefix), so runs into different prefixes
         # (e.g. entropy resamples entropy/s01..s05) track their batches separately.
         self.output_prefix = (self.config.minio.output_prefix or "").strip("/")
@@ -424,13 +469,17 @@ class BatchLabeler:
         chunk: List[Dict[str, Any]] = []
         chunk_pmids: List[str] = []
         size = tokens = 0
+        chunk_usd = 0.0
         estimated_requests = estimated_input = estimated_output = 0
+        max_batch_usd = getattr(self, "max_batch_usd", None)
 
         def flush() -> None:
-            nonlocal chunk, chunk_pmids, size, tokens, tokens_in_flight
+            nonlocal chunk, chunk_pmids, size, tokens, tokens_in_flight, chunk_usd
             if not chunk:
                 return
             desc = f"{len(chunk_pmids)} papers, {len(chunk)} requests, {size / 1e6:.1f} MB, ~{tokens / 1e6:.1f}M tokens"
+            if max_batch_usd:
+                desc += f", worst case ${chunk_usd:.2f}"
             if dry_run:
                 print(f"  [dry run] batch of {desc}")
             else:
@@ -450,7 +499,14 @@ class BatchLabeler:
                 self.save_state()
                 print(f"  submitted {batch_id}: {desc}")
             tokens_in_flight += tokens
-            chunk, chunk_pmids, size, tokens = [], [], 0, 0
+            chunk, chunk_pmids, size, tokens, chunk_usd = [], [], 0, 0, 0.0
+
+        def out_of_balance(exc: InsufficientBalance, i: int) -> int:
+            # Papers in the refused chunk plus every paper not yet built.
+            left = len(chunk_pmids) + len(todo) - i + 1
+            print(f"  provider refused the batch for insufficient balance ({exc}); {left} papers not "
+                  f"submitted. Collect finished batches, lower LA_MAX_BATCH_USD or add credit, then submit again")
+            return left
 
         for i, pmid in enumerate(todo, 1):
             try:
@@ -460,12 +516,26 @@ class BatchLabeler:
                 continue
             paper_bytes = sum(len(json.dumps(r)) for r in requests)
             paper_tokens = int(paper_bytes / CHARS_PER_TOKEN)
+            paper_usd = 0.0
+            if max_batch_usd and spec and spec.batch_prices:
+                paper_usd = (paper_tokens * spec.batch_prices.input
+                             + len(requests) * spec.max_tokens * spec.batch_prices.output) / 1e6
+                if chunk and chunk_usd + paper_usd > max_batch_usd:
+                    try:
+                        flush()
+                    except InsufficientBalance as exc:
+                        return out_of_balance(exc, i)
+                if paper_usd > max_batch_usd:
+                    print(f"  {pmid}: worst case ${paper_usd:.2f} alone exceeds LA_MAX_BATCH_USD; sent on its own")
             if spec and dry_run:
                 estimated_requests += len(requests)
                 estimated_input += paper_tokens
                 estimated_output += len(requests) * spec.max_tokens
             if self.token_budget and not (spec and dry_run) and tokens_in_flight + tokens + paper_tokens > self.token_budget:
-                flush()
+                try:
+                    flush()
+                except InsufficientBalance as exc:
+                    return out_of_balance(exc, i)
                 if tokens_in_flight + paper_tokens > self.token_budget:
                     left = len(todo) - i + 1
                     print(f"  token budget reached (~{tokens_in_flight / 1e6:.1f}M of {self.token_budget / 1e6:.0f}M "
@@ -473,17 +543,25 @@ class BatchLabeler:
                     return left
             if chunk and (size + paper_bytes > self.backend.max_bytes
                           or len(chunk) + len(requests) > self.backend.max_requests):
-                flush()
+                try:
+                    flush()
+                except InsufficientBalance as exc:
+                    return out_of_balance(exc, i)
             chunk += requests
             chunk_pmids.append(pmid)
             size += paper_bytes
             tokens += paper_tokens
+            chunk_usd += paper_usd
             if i % 100 == 0:
                 print(f"  built {i}/{len(todo)}", flush=True)
-        flush()
+        try:
+            flush()
+        except InsufficientBalance as exc:
+            return out_of_balance(exc, len(todo) + 1)
         if spec and dry_run:
             prices = spec.batch_prices
-            input_rate = prices.cache_write if spec.route == "anthropic" and prices.cache_write else prices.input
+            claude = spec.route == "anthropic" or spec.id.startswith("anthropic/")
+            input_rate = prices.cache_write if claude and prices.cache_write else prices.input
             cost = (estimated_input * input_rate + estimated_output * prices.output) / 1e6
             print(f"{self.model} {self.output_prefix}: {estimated_requests} requests, "
                   f"~{estimated_input:,} input tokens, up to {estimated_output:,} output tokens, "
@@ -577,9 +655,7 @@ class BatchLabeler:
                         "host": routing.get("host"),
                         "quantization": routing.get("quantization"),
                         "temperature": spec.temperature,
-                        "temperature_sent": spec.route != "anthropic" and not (
-                            spec.route == "openai" and _OPENAI_NO_TEMPERATURE.match(spec.id)
-                        ),
+                        "temperature_sent": sends_temperature(spec.id),
                         "reasoning_mode": spec.reasoning_mode,
                         "max_tokens": spec.max_tokens,
                         "batch_id": b["id"],

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class BatchPrices(BaseModel):
@@ -23,6 +23,13 @@ class StudyModel(BaseModel):
     reasoning_mode: str = "default"
     max_tokens: int = Field(gt=0)
     batch_prices: BatchPrices | None = None
+
+    @field_validator("host", mode="before")
+    @classmethod
+    def lowercase_host(cls, value):
+        # OpenRouter provider slugs are lowercase, but its UI shows display names
+        # ("Morph", "Together"); accept those as written.
+        return value.strip().lower() if isinstance(value, str) else value
 
 
 class StudyConfig(BaseModel):
