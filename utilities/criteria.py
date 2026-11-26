@@ -37,11 +37,26 @@ CRITERIA_INSTRUCTIONS = [
     - If human data only → satisfied=true.
     - If using patient-derived cell cultures (not animals), note that explicitly.""",
 
-    # 6) Blood as AD biomarker (not blood pressure)
-    """Criterion 6 – Blood as AD Biomarker
-    If 'blood' appears, decide if it is used as an AD biomarker (e.g., serum/plasma for amyloid/tau).
-    - Exclude circulatory measures (e.g., blood pressure, hypertension, vascular health) → satisfied=false.
-    - If blood, serum and plasma are never mentioned → satisfied="not_applicable".""",
+    # 6) Blood-based biomarker measured in this study. Judges the sample source only:
+    # disease focus is criterion 2 and molecule type is criterion 4. (v3 replaced a
+    # mention-based rule whose not_applicable answer models applied inconsistently.)
+    """Criterion 6 – Blood-Based Biomarker Measured in This Study
+    Decide whether the study itself measures at least one candidate biomarker in blood (whole blood,
+    serum, plasma, or blood cells/exosomes) and analyzes it in relation to disease status, risk, or
+    progression. Judge only the blood sample source: disease focus (criterion 2) and molecule type
+    (criterion 4) are assessed separately, so do not consider them here.
+    - satisfied=true: the authors measure an analyte in blood and analyze it as a marker (e.g., plasma
+      p-tau217, serum NfL, plasma Aβ42/40, or serum vitamin D compared across diagnostic groups).
+    - satisfied=false: no blood-derived marker is measured and analyzed in this study. In particular,
+      answer false when blood appears only as:
+      - the blood-brain barrier, cerebral blood flow or perfusion, blood pressure, hypertension, or
+        vascular health;
+      - a DNA source used only for genotyping (e.g., APOE);
+      - samples collected but not analyzed, or routine laboratory values used only as exclusion
+        criteria or covariates;
+      - a ratio computed only to assess another fluid (e.g., the CSF/serum albumin ratio);
+      - background, discussion, or cited prior work.
+    - Reviews, editorials, and animal studies follow the same rule for the data they report.""",
 ]
 
 # Criterion names for display and matching
@@ -51,7 +66,7 @@ CRITERION_NAMES = [f"criterion_{i+1}" for i in range(len(CRITERIA_INSTRUCTIONS))
 # (e.g. sample size of a mouse study). Kept distinct from false, which means the
 # condition holds and the paper fails it.
 NOT_APPLICABLE = "not_applicable"
-CONDITIONAL_CRITERIA = frozenset({"criterion_3", "criterion_6"})
+CONDITIONAL_CRITERIA = frozenset({"criterion_3"})
 
 
 def allowed_answers(name: str) -> tuple:

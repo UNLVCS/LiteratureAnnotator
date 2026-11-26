@@ -44,7 +44,7 @@ from config.study_config import StudyModel, load_study
 from llm_providers.openrouter_provider import OpenRouterProvider
 
 from labeler import LabelingGenerator
-from labeling import SkipPaper, assemble_result, build_queries
+from labeling import SCHEMA_VERSION, SkipPaper, assemble_result, build_queries
 from llm_providers.base import LLMResponse, Query
 from papers import PaperNotFoundError, load_paper_from_config, parse_bioc
 from utilities.criteria import CRITERION_NAMES
@@ -72,6 +72,16 @@ Outcome = Tuple[Optional[LLMResponse], Optional[str]]  # (response, error)
 
 class InsufficientBalance(Exception):
     """The provider refused a batch because its worst-case cost exceeds the balance (HTTP 402)."""
+
+
+def parse_criteria(value: Optional[str]) -> Optional[List[int]]:
+    """0-based criterion indices from a 1-based list like "6" or "2,6"; None means all."""
+    if not value or not value.strip():
+        return None
+    indices = sorted({int(part) - 1 for part in value.split(",") if part.strip()})
+    if not indices or indices[0] < 0 or indices[-1] >= len(CRITERION_NAMES):
+        raise SystemExit(f"LA_CRITERIA must list criteria 1-{len(CRITERION_NAMES)}, got {value!r}")
+    return None if len(indices) == len(CRITERION_NAMES) else indices
 
 
 def custom_id(pmid: str, criterion_index: int) -> str:
@@ -389,6 +399,10 @@ class BatchLabeler:
         # max_tokens, exceeds the account balance. LA_MAX_BATCH_USD caps that worst case
         # per batch; a 402 stops submission cleanly so `run` retries after a collect.
         self.max_batch_usd = float(os.environ.get("LA_MAX_BATCH_USD") or 0) or None
+        # LA_CRITERIA (e.g. "6") asks only those criteria (1-based). Collection then
+        # replaces them in the paper's stored record, so a revised criterion is re-run
+        # without paying for the other five.
+        self.criteria = parse_criteria(os.environ.get("LA_CRITERIA"))
         # One state file per (model, output_prefix), so runs into different prefixes
         # (e.g. entropy resamples entropy/s01..s05) track their batches separately.
         self.output_prefix = (self.config.minio.output_prefix or "").strip("/")
@@ -419,8 +433,24 @@ class BatchLabeler:
     def pending(self) -> List[Dict[str, Any]]:
         return [b for b in self.state["batches"] if not b.get("collected")]
 
+    def asked(self) -> List[int]:
+        """0-based indices of the criteria this run asks."""
+        criteria = getattr(self, "criteria", None)
+        return list(range(len(CRITERION_NAMES))) if criteria is None else criteria
+
+    def needs_labeling(self, pmid: str) -> bool:
+        """Whether this paper still needs the asked criteria at the current schema version."""
+        if getattr(self, "criteria", None) is None:
+            return not self.gen.result_exists(self.model, pmid)
+        record = self.gen.fetch_result(self.model, pmid)
+        if record is None:
+            return True
+        current = {r["criterion"]: r.get("schema_version", record.get("schema_version"))
+                   for r in record.get("criteria_results", [])}
+        return any(current.get(CRITERION_NAMES[i]) != SCHEMA_VERSION for i in self.asked())
+
     def build(self, pmid: str) -> Optional[List[Dict[str, Any]]]:
-        """The six batch requests for one paper, or None if it cannot be labeled."""
+        """The batch requests for one paper (one per asked criterion), or None if it cannot be labeled."""
         if getattr(self, "papers_dir", None) is not None:
             path = self.papers_dir / f"{pmid}.json"
             if not path.is_file():
@@ -435,7 +465,7 @@ class BatchLabeler:
             temperature=self.kwargs.get("temperature", 0.1),
             max_tokens=self.kwargs.get("max_tokens") or 16000,
         )
-        return [self.backend.request(custom_id(pmid, i), q, pmid) for i, q in enumerate(queries)]
+        return [self.backend.request(custom_id(pmid, i), queries[i], pmid) for i in self.asked()]
 
     def check_study_submission(self, pmids: List[str]) -> None:
         spec = self.study_model
@@ -462,7 +492,10 @@ class BatchLabeler:
             raise SystemExit(f"{self.model}: configure batch prices before estimating cost")
         in_flight = {p for b in self.pending() for p in b["pmids"]}
         todo = (pmids if getattr(self, "papers_dir", None) is not None else
-                [p for p in pmids if p not in in_flight and not self.gen.result_exists(self.model, p)])
+                [p for p in pmids if p not in in_flight and self.needs_labeling(p)])
+        if getattr(self, "criteria", None) is not None:
+            print(f"  asking only {', '.join(CRITERION_NAMES[i] for i in self.asked())}; "
+                  f"collection replaces them in each paper's stored record")
         print(f"{self.model}: {len(pmids)} papers, {len(pmids) - len(todo)} already labeled or in a "
               f"pending batch, {len(todo)} to submit")
         tokens_in_flight = 0 if spec and dry_run else self.tokens_in_flight()
@@ -494,6 +527,7 @@ class BatchLabeler:
                     "requests": len(chunk),
                     "megabytes": round(size / 1e6, 1),
                     "est_tokens": tokens,
+                    "criteria": [i + 1 for i in self.asked()],
                     "collected": False,
                 })
                 self.save_state()
@@ -610,6 +644,30 @@ class BatchLabeler:
                   flush=True)
             time.sleep(POLL_SECONDS)
 
+    def merge_criteria(self, pmid: str, fresh: Dict[str, Any], batch_id: str) -> Dict[str, Any]:
+        """Replace the freshly asked criteria in the paper's stored record.
+
+        With no stored record (e.g. a criterion-only test into its own prefix) the fresh,
+        partial record is kept as is and marked ``partial``.
+        """
+        stored = self.gen.fetch_result(self.model, pmid)
+        replaced = [r["criterion"] for r in fresh["criteria_results"]]
+        if stored is None:
+            fresh["partial"] = True
+            return fresh
+        new = {r["criterion"]: r for r in fresh["criteria_results"]}
+        stored["criteria_results"] = [new.get(r["criterion"], r) for r in stored["criteria_results"]]
+        missing = [name for name in replaced if name not in {r["criterion"] for r in stored["criteria_results"]}]
+        stored["criteria_results"] += [new[name] for name in missing]
+        order = {name: i for i, name in enumerate(CRITERION_NAMES)}
+        stored["criteria_results"].sort(key=lambda r: order.get(r["criterion"], len(order)))
+        stored.setdefault("revisions", []).append({
+            "criteria": replaced, "batch_id": batch_id, "schema_version": SCHEMA_VERSION,
+            "previous_schema_version": stored.get("schema_version"), "at": fresh["labeled_at"],
+        })
+        stored["schema_version"] = SCHEMA_VERSION
+        return stored
+
     def collect_batch(self, b: Dict[str, Any], detail: str) -> None:
         print(f"collecting {b['id']} ({detail})", flush=True)
         if b["bucket"] != self.config.minio.synthetic_data_bucket:
@@ -630,11 +688,14 @@ class BatchLabeler:
             cost = sum(usage_cost(tokens, spec) for tokens in usage)
             b["actual_cost_usd"] = cost
             print(f"  {self.model} {self.output_prefix}: ${cost:.6f} from reported token usage")
+        # Batches from before criterion subsets existed asked all six.
+        asked = [c - 1 for c in b.get("criteria") or range(1, len(CRITERION_NAMES) + 1)]
+        subset = len(asked) < len(CRITERION_NAMES)
         uploaded, failed = 0, []
         for pmid in b["pmids"]:
             got = outcomes.get(pmid, {})
             errors = [f"{CRITERION_NAMES[i]}: {got[i][1] if i in got else 'no result'}"
-                      for i in range(len(CRITERION_NAMES)) if i not in got or got[i][0] is None]
+                      for i in asked if i not in got or got[i][0] is None]
             if errors:
                 failed.append(pmid)
                 if outcomes:  # a batch rejected as a whole is reported once, below
@@ -642,11 +703,13 @@ class BatchLabeler:
                 continue
             paper = load_paper_from_config(pmid, self.config, client=self.gen.minio)
             result, _ = build_queries(paper, self.model, max_chars=self.config.papers.max_chars)
-            result = assemble_result(paper, result, [got[i][0] for i in range(len(CRITERION_NAMES))])
+            result = assemble_result(paper, result, [got[i][0] for i in asked], criteria=asked)
             result["batch_id"] = b["id"]
+            for record in result["criteria_results"]:
+                record["schema_version"] = SCHEMA_VERSION
             if spec:
                 result["sample_index"] = self.sample_index
-                for i, record in enumerate(result["criteria_results"]):
+                for i, record in zip(asked, result["criteria_results"]):
                     response = got[i][0]
                     routing = (response.metadata or {}).get("openrouter", {})
                     record["generation"] = {
@@ -663,6 +726,8 @@ class BatchLabeler:
                         "collected_at": result["labeled_at"],
                         "sample_index": self.sample_index,
                     }
+            if subset:
+                result = self.merge_criteria(pmid, result, b["id"])
             path = self.out_dir / f"{pmid}.json"
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(result, indent=2))

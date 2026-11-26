@@ -17,7 +17,9 @@ from papers import Paper, render_paper, resolve_evidence
 from response_standardizer import standardize_llm_response
 from utilities.criteria import CRITERIA_PROMPTS, CRITERION_NAMES, NOT_APPLICABLE, allowed_answers
 
-SCHEMA_VERSION = "whole-paper-v2"  # v2: "not_applicable" answer for conditional criteria
+# v2: "not_applicable" answer for conditional criteria.
+# v3: criterion 6 judges only whether the study measures a blood biomarker (true/false).
+SCHEMA_VERSION = "whole-paper-v3"
 
 
 
@@ -125,9 +127,16 @@ def build_queries(
     return result, queries
 
 
-def assemble_result(paper: Paper, result: Dict[str, Any], responses: List[LLMResponse]) -> Dict[str, Any]:
-    """Parse one response per criterion (CRITERION_NAMES order) into ``result``."""
-    for name, prompt, response in zip(CRITERION_NAMES, CRITERIA_PROMPTS, responses):
+def assemble_result(paper: Paper, result: Dict[str, Any], responses: List[LLMResponse],
+                    criteria: Optional[List[int]] = None) -> Dict[str, Any]:
+    """Parse one response per criterion into ``result``.
+
+    ``responses`` follow CRITERION_NAMES order, or the order of ``criteria`` (0-based
+    indices) when only some criteria were asked.
+    """
+    indices = list(range(len(CRITERION_NAMES))) if criteria is None else list(criteria)
+    pairs = [(CRITERION_NAMES[i], CRITERIA_PROMPTS[i]) for i in indices]
+    for (name, prompt), response in zip(pairs, responses):
         parsed, cleaned, success = standardize_llm_response(response.content)
         answer = (parsed or {}).get(name) if success else None
         error = None

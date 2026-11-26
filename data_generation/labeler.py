@@ -76,6 +76,23 @@ class LabelingGenerator:
                 return False
             raise
 
+    def fetch_result(self, provider_name: str, pmid: str) -> Optional[Dict[str, Any]]:
+        """The stored result record for this model and paper, or None if there is none."""
+        from minio.error import S3Error
+
+        name = result_object_name({"provider": provider_name, "paper_id": pmid}, self.config.minio.output_prefix)
+        try:
+            response = self.minio.get_object(self.config.minio.synthetic_data_bucket, name)
+        except S3Error as e:
+            if e.code in ("NoSuchKey", "NoSuchObject"):
+                return None
+            raise
+        try:
+            return json.loads(response.read())
+        finally:
+            response.close()
+            response.release_conn()
+
     def upload(self, result: Dict[str, Any]) -> str:
         from io import BytesIO
 

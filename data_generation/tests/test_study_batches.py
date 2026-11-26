@@ -325,3 +325,95 @@ def test_openrouter_maps_402_to_insufficient_balance():
     batch = OpenRouterBatches("test/model", {"api_key": "fake", "host": "x", "http_client": Refusing()})
     with pytest.raises(InsufficientBalance, match="Insufficient credits"):
         batch.submit([{"custom_id": "1-c1", "body": {}}])
+
+
+def test_parse_criteria():
+    from data_generation.batch_labeler import parse_criteria
+    assert parse_criteria(None) is None and parse_criteria(" ") is None
+    assert parse_criteria("6") == [5]
+    assert parse_criteria("6, 2") == [1, 5]
+    assert parse_criteria("1,2,3,4,5,6") is None
+    for bad in ("0", "7"):
+        with pytest.raises(SystemExit):
+            parse_criteria(bad)
+
+
+def test_criterion_subset_builds_only_asked_requests(study, tmp_path):
+    runner = _capped_runner(study, tmp_path, cap=None)
+    runner.criteria = [5]
+    batches = []
+    runner.backend.submit = lambda rows: batches.append(rows) or "b1"
+    assert runner.submit(["1", "2"]) == 0
+    assert [r["custom_id"] for r in batches[0]] == ["1-c6", "2-c6"]
+    assert runner.state["batches"][0]["criteria"] == [6]
+
+
+def _subset_collector(study, tmp_path, monkeypatch, stored):
+    import data_generation.batch_labeler as batch_module
+    from llm_providers.base import LLMResponse
+    from papers import parse_bioc
+
+    labeler = BatchLabeler.__new__(BatchLabeler)
+    labeler.study_model = study.models[2]
+    labeler.model = labeler.study_model.id
+    labeler.sample_index = 0
+    labeler.output_prefix = study.sample_prefixes[0]
+    labeler.config = AppConfig()
+    labeler.config.minio.synthetic_data_bucket = "synthetic-data-v3"
+    labeler.state_path = tmp_path / "state.json"
+    labeler.out_dir = tmp_path / "results"
+    uploaded = []
+    labeler.gen = SimpleNamespace(minio=object(), upload=uploaded.append,
+                                  fetch_result=lambda model, pmid: stored)
+    paper = parse_bioc("123", {"documents": [{"id": "123", "passages": [{"text": "A paper."}]}]})
+    monkeypatch.setattr(batch_module, "load_paper_from_config", lambda *args, **kwargs: paper)
+
+    def results(batch_id):
+        yield "123-c6", (LLMResponse(
+            content='{"criterion_6": {"satisfied": false, "reason": "CSF only."}}',
+            model="exact-version", usage={"cost": 0.01}, metadata={"openrouter": {"host": "Morph"}},
+        ), None)
+
+    labeler.backend = SimpleNamespace(results=results)
+    batch = {"id": "c6batch", "bucket": "synthetic-data-v3", "output_prefix": labeler.output_prefix,
+             "raw_prefix": "papers", "pmids": ["123"], "criteria": [6]}
+    labeler.state = {"batches": [batch]}
+    labeler.collect_batch(batch, "completed")
+    return uploaded, batch
+
+
+def test_criterion_subset_replaces_only_that_criterion(study, tmp_path, monkeypatch):
+    from utilities.criteria import CRITERION_NAMES
+    stored = {
+        "paper_id": "123", "provider": study.models[2].id, "schema_version": "whole-paper-v2",
+        "criteria_results": [{"criterion": name, "response": {name: {"satisfied": "old"}}}
+                             for name in CRITERION_NAMES],
+    }
+    uploaded, batch = _subset_collector(study, tmp_path, monkeypatch, stored)
+    record, = uploaded
+    assert [r["criterion"] for r in record["criteria_results"]] == CRITERION_NAMES
+    assert [r["response"][r["criterion"]]["satisfied"] for r in record["criteria_results"]] == ["old"] * 5 + [False]
+    c6 = record["criteria_results"][5]
+    assert c6["schema_version"] == "whole-paper-v3" and c6["generation"]["batch_id"] == "c6batch"
+    assert record["schema_version"] == "whole-paper-v3"
+    assert record["revisions"][-1]["criteria"] == ["criterion_6"]
+    assert record["revisions"][-1]["previous_schema_version"] == "whole-paper-v2"
+    assert batch["uploaded"] == 1 and batch["failed"] == []
+
+
+def test_criterion_subset_without_stored_record_is_partial(study, tmp_path, monkeypatch):
+    uploaded, _ = _subset_collector(study, tmp_path, monkeypatch, None)
+    record, = uploaded
+    assert record["partial"] is True
+    assert [r["criterion"] for r in record["criteria_results"]] == ["criterion_6"]
+
+
+def test_needs_labeling_checks_per_criterion_schema(study, tmp_path):
+    runner = _capped_runner(study, tmp_path, cap=None)
+    runner.criteria = [5]
+    old = {"schema_version": "whole-paper-v2", "criteria_results": [{"criterion": "criterion_6"}]}
+    new = {"schema_version": "whole-paper-v3",
+           "criteria_results": [{"criterion": "criterion_6", "schema_version": "whole-paper-v3"}]}
+    for record, needed in ((None, True), (old, True), (new, False)):
+        runner.gen = SimpleNamespace(fetch_result=lambda model, pmid, r=record: r)
+        assert runner.needs_labeling("1") is needed
