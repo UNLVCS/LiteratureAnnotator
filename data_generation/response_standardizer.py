@@ -31,15 +31,16 @@ def standardize_llm_response(raw_response: str) -> Tuple[Optional[Dict[str, Any]
     # Step 1: Clean the response content
     cleaned_content = clean_response_content(raw_response.strip())
     
-    # Step 2: Try to parse the cleaned content
+    # Step 2: Try to parse the cleaned content. strict=False accepts raw control
+    # characters (e.g. tabs) inside strings, which models copy from tables in quotes.
     try:
-        parsed_json = json.loads(cleaned_content)
+        parsed_json = json.loads(cleaned_content, strict=False)
         return parsed_json, cleaned_content, True
     except json.JSONDecodeError as e:
         # Step 3: If parsing fails, try additional cleaning strategies
         cleaned_content = apply_additional_cleaning(cleaned_content)
         try:
-            parsed_json = json.loads(cleaned_content)
+            parsed_json = json.loads(cleaned_content, strict=False)
             return parsed_json, cleaned_content, True
         except json.JSONDecodeError:
             return None, cleaned_content, False

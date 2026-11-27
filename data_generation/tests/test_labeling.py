@@ -121,3 +121,11 @@ def test_result_object_name():
     r = {"provider": "openai/gpt-oss-120b", "paper_id": "41000001"}
     assert result_object_name(r) == "openai/gpt-oss-120b/41000001.json"
     assert result_object_name(r, "/run_v1/") == "run_v1/openai/gpt-oss-120b/41000001.json"
+
+
+def test_parser_accepts_tabs_copied_into_quotes():
+    from data_generation.response_standardizer import standardize_llm_response
+    raw = '{"criterion_3": {"satisfied": true, "reason": "r", "evidence": [{"section": "T", "quote": "AD (n\t=\t22)"}]}}'
+    parsed, _, ok = standardize_llm_response(raw)
+    assert ok and parsed["criterion_3"]["evidence"][0]["quote"] == "AD (n\t=\t22)"
+    assert not standardize_llm_response('{"criterion_4": {"satisfied": true}\n  only\n}')[2]
