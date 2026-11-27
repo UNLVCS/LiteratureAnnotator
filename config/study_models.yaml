@@ -45,11 +45,12 @@ models:
     temperature: 1
     max_tokens: 16000
     batch_prices: {input: 1.15, cached_input: 1.15, output: 3.45}
-  - id: z-ai/glm-5.3
-    alias: glm
+  # Kimi replaced GLM-5.3 on 2026-11-27: GLM's s04 resample batch stalled on Morph.
+  # GLM's s00 and s01-s03/s05 results remain in MinIO under z-ai/glm-5.3/.
+  - id: moonshotai/kimi-k3.1-pro
+    alias: kimi
     route: openrouter
     host: morph
     temperature: 1
-    reasoning_mode: always_on
     max_tokens: 16000
-    batch_prices: {input: 0.281, cached_input: 0.061, output: 1.25}
+    batch_prices: {input: 0.372, cached_input: 0.1, output: 5.583}

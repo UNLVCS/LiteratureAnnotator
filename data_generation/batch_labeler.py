@@ -229,9 +229,11 @@ class OpenAIBatches:
 class OpenRouterBatches(OpenAIBatches):
     """OpenRouter chat completions with one batch-level provider pin."""
 
-    # Bound inline request bodies locally. The service also applies account-specific limits.
+    # Bound inline request bodies locally; uploads near 20 MB were sometimes dropped
+    # mid-transfer. (A 403 here is usually the API key's own spending limit, which
+    # counts in-flight worst-case holds, not the batch size.)
     max_requests = 1_000
-    max_bytes = 20_000_000
+    max_bytes = 5_000_000
     default_token_budget = None
     terminal = {"completed", "failed", "expired", "cancelled"}
 
@@ -274,7 +276,13 @@ class OpenRouterBatches(OpenAIBatches):
             f"{self.provider.base_url}/batches{path}",
             headers=self.provider.headers, timeout=self.provider.timeout, **kwargs,
         )
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            # Keep OpenRouter's explanation; the bare status code says little (e.g. 403).
+            failed = exc.response if exc.response is not None else response
+            body = getattr(failed, "text", "") or ""
+            raise requests.HTTPError(f"{exc} | {body[:500]}", response=failed) from exc
         return response.json()
 
     def submit(self, rows: List[Dict[str, Any]]) -> str:
