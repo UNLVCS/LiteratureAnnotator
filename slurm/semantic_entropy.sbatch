@@ -72,6 +72,7 @@ uv sync --all-packages --group slurm
 export PYTHONUNBUFFERED=1 PYTHONPATH="$PWD:$PWD/data_generation:$PWD/weak_supervision"
 ARGS=()
 if [ -n "${LIMIT:-}" ]; then ARGS+=(--limit "$LIMIT" --no-upload); fi
+if [ -n "${STUDY:-}" ]; then ARGS+=(--study-config "$STUDY"); fi
 uv run --all-packages --group slurm --with pandas --with pyarrow --with sentencepiece \
   python weak_supervision/semantic_entropy.py "${ARGS[@]}"
 
