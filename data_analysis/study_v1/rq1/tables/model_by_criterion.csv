@@ -1,0 +1,37 @@
+model,criterion,quotes,unmatched,match_rate,section_misattrib,empty_evidence,valid_answers,share_answers_any_unmatched
+Opus 5.5,criterion_1,271,0,1.0,0.0,0.0,98,0.0
+Opus 5.5,criterion_2,281,0,1.0,0.0,0.0,98,0.0
+Opus 5.5,criterion_3,204,0,1.0,0.0,0.0,99,0.0
+Opus 5.5,criterion_4,269,0,1.0,0.0,0.0208,96,0.0
+Opus 5.5,criterion_5,225,0,1.0,0.0,0.0103,97,0.0
+Opus 5.5,criterion_6,209,0,1.0,0.0048,0.0816,98,0.0
+GPT-6.2-sol,criterion_1,250,0,1.0,0.0,0.0,100,0.0
+GPT-6.2-sol,criterion_2,230,0,1.0,0.0,0.0,100,0.0
+GPT-6.2-sol,criterion_3,127,0,1.0,0.0,0.09,100,0.0
+GPT-6.2-sol,criterion_4,237,0,1.0,0.0,0.05,100,0.0
+GPT-6.2-sol,criterion_5,182,0,1.0,0.0,0.05,100,0.0
+GPT-6.2-sol,criterion_6,111,0,1.0,0.0,0.48,100,0.0
+Gemini 4-carbon,criterion_1,259,0,1.0,0.0,0.01,100,0.0
+Gemini 4-carbon,criterion_2,257,0,1.0,0.0,0.0,100,0.0
+Gemini 4-carbon,criterion_3,212,0,1.0,0.0,0.04,100,0.0
+Gemini 4-carbon,criterion_4,269,0,1.0,0.0,0.06,100,0.0
+Gemini 4-carbon,criterion_5,184,0,1.0,0.0,0.2,100,0.0
+Gemini 4-carbon,criterion_6,192,0,1.0,0.0,0.2323,99,0.0
+DeepSeek v4.1 Flash,criterion_1,270,0,1.0,0.0,0.0,100,0.0
+DeepSeek v4.1 Flash,criterion_2,269,2,0.9926,0.0,0.01,100,0.0202
+DeepSeek v4.1 Flash,criterion_3,167,2,0.988,0.0,0.09,100,0.022
+DeepSeek v4.1 Flash,criterion_4,246,3,0.9878,0.0,0.08,100,0.0326
+DeepSeek v4.1 Flash,criterion_5,194,0,1.0,0.0,0.11,100,0.0
+DeepSeek v4.1 Flash,criterion_6,146,1,0.9932,0.0138,0.42,100,0.0172
+Qwen 3.8 Max,criterion_1,224,1,0.9955,0.0,0.01,100,0.0101
+Qwen 3.8 Max,criterion_2,227,1,0.9956,0.0,0.01,100,0.0101
+Qwen 3.8 Max,criterion_3,159,0,1.0,0.0,0.05,100,0.0
+Qwen 3.8 Max,criterion_4,242,2,0.9917,0.0042,0.07,100,0.0215
+Qwen 3.8 Max,criterion_5,177,0,1.0,0.0056,0.08,100,0.0
+Qwen 3.8 Max,criterion_6,131,1,0.9924,0.0,0.45,100,0.0182
+Kimi K3.1 Pro,criterion_1,277,0,1.0,0.0,0.0,100,0.0
+Kimi K3.1 Pro,criterion_2,250,0,1.0,0.0,0.0,100,0.0
+Kimi K3.1 Pro,criterion_3,136,0,1.0,0.0,0.11,100,0.0
+Kimi K3.1 Pro,criterion_4,259,0,1.0,0.0,0.08,100,0.0
+Kimi K3.1 Pro,criterion_5,187,0,1.0,0.0,0.11,100,0.0
+Kimi K3.1 Pro,criterion_6,115,0,1.0,0.0,0.51,100,0.0

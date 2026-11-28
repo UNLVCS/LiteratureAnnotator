@@ -1,0 +1,7 @@
+model,answers,no_valid_answer,content_filter,length,papers_affected
+Opus 5.5,600,14,14,0,4
+GPT-6.2-sol,600,0,0,0,0
+Gemini 4-carbon,600,1,0,1,1
+DeepSeek v4.1 Flash,600,0,0,0,0
+Qwen 3.8 Max,600,0,0,0,0
+Kimi K3.1 Pro,600,0,0,0,0

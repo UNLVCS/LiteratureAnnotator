@@ -1,0 +1,8 @@
+model,a_paraphrase,total_unmatched,a_paraphrase_share
+Opus 5.5,0,0,
+GPT-6.2-sol,0,0,
+Gemini 4-carbon,0,0,
+DeepSeek v4.1 Flash,8,8,1.0
+Qwen 3.8 Max,5,5,1.0
+Kimi K3.1 Pro,0,0,
+ALL,13,13,1.0

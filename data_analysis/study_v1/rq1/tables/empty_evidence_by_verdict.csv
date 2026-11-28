@@ -1,0 +1,19 @@
+model,verdict_c,answers,empty,empty_share
+DeepSeek v4.1 Flash,False,167,52,0.3114
+DeepSeek v4.1 Flash,True,398,11,0.0276
+DeepSeek v4.1 Flash,not_applicable,35,8,0.2286
+GPT-6.2-sol,False,173,54,0.3121
+GPT-6.2-sol,True,392,5,0.0128
+GPT-6.2-sol,not_applicable,35,8,0.2286
+Gemini 4-carbon,False,169,30,0.1775
+Gemini 4-carbon,True,395,20,0.0506
+Gemini 4-carbon,not_applicable,35,4,0.1143
+Kimi K3.1 Pro,False,169,60,0.355
+Kimi K3.1 Pro,True,397,11,0.0277
+Kimi K3.1 Pro,not_applicable,34,10,0.2941
+Opus 5.5,False,163,10,0.0613
+Opus 5.5,True,389,1,0.0026
+Opus 5.5,not_applicable,34,0,0.0
+Qwen 3.8 Max,False,177,56,0.3164
+Qwen 3.8 Max,True,390,8,0.0205
+Qwen 3.8 Max,not_applicable,33,3,0.0909

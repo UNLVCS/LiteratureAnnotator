@@ -1,0 +1,7 @@
+criterion,quotes,match_rate,match_rate_weighted,section_misattrib,empty_evidence,share_answers_any_unmatched,match_lo,match_hi
+criterion_1,1551,0.9994,0.9997,0.0,0.0033,0.0017,0.998,1.0
+criterion_2,1514,0.998,0.9981,0.0,0.0033,0.005,0.9954,1.0
+criterion_3,1005,0.998,0.9979,0.0,0.0634,0.0036,0.995,1.0
+criterion_4,1522,0.9967,0.9979,0.0007,0.0604,0.0089,0.9936,0.9993
+criterion_5,1149,1.0,1.0,0.0009,0.0938,0.0,1.0,1.0
+criterion_6,904,0.9978,0.999,0.0033,0.3635,0.0053,0.9944,1.0

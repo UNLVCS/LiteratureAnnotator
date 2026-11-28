@@ -1,0 +1,16 @@
+model_a,model_b,unmatched_a,unmatched_b,diff_a_minus_b,ci_lo,ci_hi,ci_excludes_0
+Opus 5.5,GPT-6.2-sol,0.0,0.0,0.0,0.0,0.0,False
+Opus 5.5,Gemini 4-carbon,0.0,0.0,0.0,0.0,0.0,False
+Opus 5.5,DeepSeek v4.1 Flash,0.0,0.0062,-0.0062,-0.0106,-0.0023,True
+Opus 5.5,Qwen 3.8 Max,0.0,0.0043,-0.0043,-0.0085,-0.0009,True
+Opus 5.5,Kimi K3.1 Pro,0.0,0.0,0.0,0.0,0.0,False
+GPT-6.2-sol,Gemini 4-carbon,0.0,0.0,0.0,0.0,0.0,False
+GPT-6.2-sol,DeepSeek v4.1 Flash,0.0,0.0062,-0.0062,-0.0106,-0.0023,True
+GPT-6.2-sol,Qwen 3.8 Max,0.0,0.0043,-0.0043,-0.0085,-0.0009,True
+GPT-6.2-sol,Kimi K3.1 Pro,0.0,0.0,0.0,0.0,0.0,False
+Gemini 4-carbon,DeepSeek v4.1 Flash,0.0,0.0062,-0.0062,-0.0106,-0.0023,True
+Gemini 4-carbon,Qwen 3.8 Max,0.0,0.0043,-0.0043,-0.0085,-0.0009,True
+Gemini 4-carbon,Kimi K3.1 Pro,0.0,0.0,0.0,0.0,0.0,False
+DeepSeek v4.1 Flash,Qwen 3.8 Max,0.0062,0.0043,0.0019,-0.0032,0.0069,False
+DeepSeek v4.1 Flash,Kimi K3.1 Pro,0.0062,0.0,0.0062,0.0023,0.0106,True
+Qwen 3.8 Max,Kimi K3.1 Pro,0.0043,0.0,0.0043,0.0009,0.0085,True
